@@ -290,7 +290,7 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      min-width: 170px;
+      min-width: 125px;
     }
     .row-controls input, .row-controls select {
       padding: 4px 6px;
@@ -427,7 +427,7 @@
               <th style="width: 105px;">Code / Hex</th>
               <th>Parameter Name, OBD Signal &amp; Function Groups</th>
               <th style="width: 115px;">Class / Unit</th>
-              <th style="width: 190px;">Polling &amp; YAML Name</th>
+              <th style="width: 145px;">Polling</th>
             </tr>
           </thead>
           <tbody id="dp-tbody"></tbody>
@@ -451,7 +451,11 @@
           </label>
           <label class="checkbox-label">
             <input type="checkbox" id="opt-include-names" checked onchange="updateYaml()" />
-            Include custom <code>name:</code>
+            Include <code>name:</code>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="opt-prefix-code" onchange="updateYaml()" />
+            Prefix <code>name:</code> with menu code (<code>AM027 ...</code>)
           </label>
           <label class="checkbox-label">
             <input type="checkbox" id="opt-include-comments" checked onchange="updateYaml()" />
@@ -505,7 +509,6 @@
       const cleanLabel = (dp.label || "").replace(/\s+/g, " ").trim();
       const cleanDesc = (dp.desc || dp.name).replace(/\s+/g, " ").trim();
       const baseTitle = cleanLabel || cleanDesc;
-      const defaultName = code ? (code + " " + baseTitle) : baseTitle;
 
       return {
         ...dp,
@@ -517,11 +520,11 @@
         fgSet: new Set(fgs),
         cleanLabel,
         cleanDesc,
+        baseTitle,
         subsys,
         phys,
         defaultInterval,
         defaultPlatform,
-        defaultName,
         searchBlob: [code, dp.name, cleanLabel, hexIdx, key, cleanDesc, u, fgs.join(" ")].join(" ").toLowerCase()
       };
     });
@@ -669,11 +672,10 @@
       renderTable();
     }
 
-    function selectDp(dp, intervalOverride, nameOverride, platformOverride) {
+    function selectDp(dp, intervalOverride, platformOverride) {
       selected.set(dp.key, {
         dp,
         interval: intervalOverride || dp.defaultInterval,
-        name: nameOverride || dp.defaultName,
         platform: platformOverride || dp.defaultPlatform
       });
     }
@@ -765,7 +767,6 @@
         const isSel = selected.has(dp.key);
         const selObj = selected.get(dp.key);
         const intervalVal = selObj ? selObj.interval : dp.defaultInterval;
-        const nameVal = selObj ? selObj.name : dp.defaultName;
         const platVal = selObj ? selObj.platform : dp.defaultPlatform;
 
         let enumHtml = "";
@@ -809,7 +810,7 @@
         html += "<td><span class=\"cls-tag cls-" + dp.cls + "\">" + escapeHtml(dp.cls) + "</span>";
         html += "<div class=\"unit-tag\">" + escapeHtml(dp.type) + gainStr + (dp.unit ? " · " + escapeHtml(dp.unit) : "") + "</div></td>";
 
-        html += "<td><div class=\"row-controls\"><div style=\"display:flex; gap:4px;\">";
+        html += "<td><div class=\"row-controls\">";
         html += "<select onchange=\"updateRowField('" + dp.key + "', 'interval', this.value)\" " + (!isSel ? "disabled" : "") + ">";
         for (const iv of ["5s", "10s", "30s", "60s", "300s"]) {
           html += "<option value=\"" + iv + "\" " + (intervalVal === iv ? "selected" : "") + ">Poll: " + iv + "</option>";
@@ -821,17 +822,24 @@
           html += "<option value=\"text_sensor\" " + (platVal === "text_sensor" ? "selected" : "") + ">text_sensor</option>";
           html += "</select>";
         }
-        html += "</div>";
-        html += "<input type=\"text\" value=\"" + escapeHtml(nameVal) + "\" oninput=\"updateRowField('" + dp.key + "', 'name', this.value)\" placeholder=\"Sensor name in HA\" " + (!isSel ? "disabled" : "") + " />";
         html += "</div></td></tr>";
         return html;
       });
       tbody.innerHTML = rowsHtml.join("");
     }
 
+    function formatSensorName(dp, prefixCode) {
+      const title = dp.baseTitle || dp.cleanLabel || dp.cleanDesc || dp.name;
+      if (prefixCode && dp.code) {
+        return dp.code + " " + title;
+      }
+      return title;
+    }
+
     function updateYaml() {
       const fullConfig = document.getElementById("opt-full-config").checked;
       const includeNames = document.getElementById("opt-include-names").checked;
+      const prefixCode = document.getElementById("opt-prefix-code").checked;
       const includeComments = document.getElementById("opt-include-comments").checked;
 
       const numericGroups = new Map();
@@ -898,8 +906,8 @@
               lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + unitNote + ") — " + titleNote);
             }
             lines.push("      - parameter: " + paramKey);
-            if (includeNames && entry.name.trim()) {
-              const safeName = entry.name.trim().split('"').join('\"');
+            if (includeNames) {
+              const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
               lines.push('        name: "' + safeName + '"');
             }
           }
@@ -924,8 +932,8 @@
               lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + ") — " + titleNote);
             }
             lines.push("      - parameter: " + paramKey);
-            if (includeNames && entry.name.trim()) {
-              const safeName = entry.name.trim().split('"').join('\"');
+            if (includeNames) {
+              const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
               lines.push('        name: "' + safeName + '"');
             }
           }
@@ -978,7 +986,7 @@
       ];
       for (const item of initialStrateo) {
         const found = DATAPOINTS.find(d => d.code === item.match || d.name === item.match);
-        if (found) selectDp(found, item.interval, item.name);
+        if (found) selectDp(found, item.interval);
       }
       renderTable();
       updateYaml();

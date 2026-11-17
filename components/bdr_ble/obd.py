@@ -216,7 +216,6 @@ def infer_sensor_metadata(dp: dict[str, Any]) -> dict[str, Any]:
     elif unit_raw:
         meta["unit_of_measurement"] = unit_raw
 
-    code = dp.get("code", "")
     desc = dp.get("label", "") or dp.get("desc", "") or dp.get("name", "")
-    meta["default_name"] = f"{code} {desc}".strip() if code else desc
+    meta["default_name"] = desc.strip()
     return meta

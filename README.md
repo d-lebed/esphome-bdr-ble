@@ -180,7 +180,7 @@ sensor:
 #### Optional Per-Sensor Overrides
 Every item inside `sensors:` (or a standalone `- platform: bdr_ble` sensor entry) automatically populates its metadata from `obd_catalog.json`, but you can override any standard ESPHome sensor option:
 - `parameter` (**Required**): Menu code (`AC005`), OBD name (`varAp...`), or hex (`0x5044:00`).
-- `name` (*Optional*): Entity name in Home Assistant (defaults to `"<Code> <English Label>"` from `obd_catalog.json`).
+- `name` (*Optional*): Entity name in Home Assistant (defaults to the clean English label from `obd_catalog.json`, e.g., `"Outdoor temperature"`).
 - `sub_index` (*Optional*): Override CANopen `SubIndex` (`0..255`, e.g., for zone or cascade array parameters).
 - `node_id` (*Optional*): Override CANopen `NodeId` (`0..255`, defaults to hub `node_id: 1`).
 - `scale` (*Optional*): Override the multiplier (`Gain`) from `obd_catalog.json`.
@@ -211,22 +211,64 @@ text_sensor:
 
 ---
 
-## Interactive HTML YAML Constructor & Appliance Snapshot
+## Step-by-Step Workflow: How to Discover & Configure Supported Sensors for Your Boiler
 
-Open **[`docs/configurator.html`](./docs/configurator.html)** directly in any browser (no server or internet connection required — the entire catalog is embedded inside the single HTML file):
+Because BDR Thermea's Object Dictionary (`obd_catalog.json`) contains **3,092 datapoints** across dozens of heat pump, gas boiler, oil boiler, and cascade configurations, each individual appliance only implements the subset of parameters that match its hardware and configuration (`CN1` / `CN2`).
 
-1. **Filter by Controller Board Model & Function Group:**
-   Select your controller board (`EHC-08`, `EHC-04`, `CU-08`, `CU-OH02`, `CU-HW01`, etc.) or specific `BDR_OBD` hardware/software Function Group (`FG1001_A_41 — Heat pump air Source`, `FG0140_X_22 — Zone DHW primary Ext Tank (ASHP)`, `FG2001..2003 — Inverter`, etc.).
-2. **Filter by Live Boiler Snapshot (`BDR_SNAPSHOT:`):**
-   When `bdr_ble` connects to your boiler, it reads `0x502B:01..15` (`varApMenuDescriptor`) and prints lines like:
-   ```text
-   [I][bdr_ble:...]: === Appliance Snapshot (148 supported datapoints from 0x502B:01..15) ===
-   [I][bdr_ble:...]: BDR_SNAPSHOT:500A:00,500C:00,5013:00,5016:00,501E:00,5044:00,...
-   [I][bdr_ble:...]: === End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===
+Here is the recommended **3-step workflow** to discover and configure the exact sensors supported by your specific boiler or heat pump:
+
+### Step 1: Flash a Minimal Config (Without Sensors) & Capture the Boiler Snapshot
+1. First, flash your ESP32 with just the `bdr_ble` hub and the `status` text sensor (no `sensor:` entries needed yet):
+   ```yaml
+   external_components:
+     - source: github://d-lebed/esphome-bdr-ble
+       components: [bdr_ble]
+
+   esp32_ble:
+     io_capability: keyboard_only
+
+   esp32_ble_tracker:
+     scan_parameters:
+       active: true
+
+   ble_client:
+     - mac_address: "00:A0:50:XX:XX:XX"
+       id: boiler_ble
+
+   bdr_ble:
+     id: boiler_hub
+     ble_client_id: boiler_ble
+     pin: !secret strateo_ble_pin
+     node_id: 1
+     auth_level: 4
+
+   text_sensor:
+     - platform: bdr_ble
+       status:
+         name: "Boiler BLE Status"
    ```
-   Copy those log lines (even with ESPHome timestamps) and paste them into the **`Paste BDR_SNAPSHOT:...`** field in `docs/configurator.html` — the table will immediately filter down to the exact datapoints physically active on your boiler.
-3. **Select & Copy YAML:**
-   Check the parameters you want, choose their polling interval (`5s`, `10s`, `30s`, `60s`, `300s`), and click **Copy YAML**.
+2. Open the **ESPHome logs**. As soon as `bdr_ble` pairs and completes the two-stage TEA unlock, it automatically queries the boiler's internal menu descriptor table (`0x502B:01..15` `varApMenuDescriptor`) and prints a `BDR_SNAPSHOT:` block:
+   ```text
+   [I][bdr_ble:695]: === Appliance Snapshot (148 supported datapoints from 0x502B:01..15) ===
+   [I][bdr_ble:714]: BDR_SNAPSHOT:500A:00,500C:00,5013:00,5016:00,501E:00,5044:00,5045:00,...
+   [I][bdr_ble:714]: BDR_SNAPSHOT:5046:00,507A:00,5085:00,5086:00,5600:00,5601:00,...
+   [I][bdr_ble:716]: === End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===
+   ```
+
+### Step 2: Paste the Snapshot into `docs/configurator.html` & Pick Your Sensors
+1. Open **[`docs/configurator.html`](./docs/configurator.html)** in your browser (it is a 100% self-contained single-file HTML+JS page with the entire OBD catalog built in).
+2. Copy the `BDR_SNAPSHOT:...` lines from your ESPHome log (you can copy them raw, even with `[I][bdr_ble:...]` prefixes and timestamps) and paste them into the **`Paste BDR_SNAPSHOT:... lines from ESPHome logs`** input box.
+3. The table immediately filters down to **only the exact parameters, live measurements (`Signal`), and counters (`Counter`) reported by your boiler's `0x502B` descriptor**.
+4. Check the sensors you want, choose their polling interval (`5s`, `10s`, `30s`, `60s`, `300s`), and choose your YAML formatting options in the right-hand toolbar:
+   - **`Include name:`** — generates clean English sensor names (e.g. `name: "Energy consumed in standby mode"` or `name: "Outdoor temperature"`).
+   - **`Prefix name: with menu code (AM027 ...)`** — optional toggle if you prefer the short installer menu code prepended to the sensor name (off by default).
+5. Click **Copy YAML** and paste the generated `sensor:` / `text_sensor:` blocks into your ESPHome configuration.
+
+### Step 3: Optionally Add Extra Parameters Manually (Protected by `Auto-Skip`)
+Some internal CANopen datapoints (such as certain aggregate counters like `varApTotalEnergyDelivery` `0x5089:00` that don't have a front-panel `AM`/`AC` menu item) may still be supported by your boiler's firmware even if they are not listed in the user menu table `0x502B`:
+1. In [`docs/configurator.html`](./docs/configurator.html), click **Clear Snapshot** (or select your controller board model such as `EHC-08`, `CU-08`, `CU-OH02`, or uncheck *"Only with menu code"*) to browse all datapoints for your appliance family and Function Groups (`FG1001_A_41`, `FG1008_X_00`, `FG2001_A_00`, etc.).
+2. Add any additional parameters you want to test to your YAML.
+3. **Automatic Safety Net (`Auto-Skip`):** If any manually added parameter turns out not to be supported by your boiler (`GetListResponse` status `!= 0x01` or `SDO Abort`), `bdr_ble` will log a warning once on the first read and **automatically disable polling for that datapoint** so it never slows down your BLE batches.
 
 ---
 

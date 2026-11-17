@@ -1,0 +1,76 @@
+esphome:
+  name: bdr-boiler-ble
+  friendly_name: BDR Boiler BLE
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [bdr_ble]
+
+esp32:
+  board: esp32-c6-devkitm-1
+  variant: esp32c6
+  framework:
+    type: esp-idf
+
+logger:
+
+esp32_ble:
+  io_capability: keyboard_only
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+
+ble_client:
+  - mac_address: "00:A0:50:XX:XX:XX"
+    id: boiler_ble
+
+bdr_ble:
+  id: boiler_hub
+  ble_client_id: boiler_ble
+  pin: !secret strateo_ble_pin
+  node_id: 1
+  auth_level: 4
+
+switch:
+  - platform: ble_client
+    ble_client_id: boiler_ble
+    name: "Boiler BLE Connect"
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+
+sensor:
+  # Fast group (polled every 10s in a batch)
+  - platform: bdr_ble
+    update_interval: 10s
+    sensors:
+      - parameter: AM027
+        name: "Outside Temperature"
+      - parameter: AM016
+        name: "Flow Temperature"
+      - parameter: AM018
+        name: "Return Temperature"
+      - parameter: BM000
+        name: "DHW Tank Temperature"
+      - parameter: AM019
+        name: "Water Pressure"
+
+  # Slow group (polled every 60s in a batch)
+  - platform: bdr_ble
+    update_interval: 60s
+    sensors:
+      - parameter: AC005
+        name: "CH Energy Consumed"
+      - parameter: AC006
+        name: "DHW Energy Consumed"
+      - parameter: varApTotalEnergyConsumption
+        name: "Total Energy Consumed"
+      - parameter: AC018
+        name: "Backup Heater Energy Consumed"
+
+text_sensor:
+  - platform: bdr_ble
+    status:
+      name: "BLE Status"

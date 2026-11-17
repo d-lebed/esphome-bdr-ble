@@ -3,9 +3,7 @@ esphome:
   friendly_name: BDR Boiler BLE
 
 external_components:
-  - source:
-      type: local
-      path: components
+  - source: github://d-lebed/esphome-bdr-ble
     components: [bdr_ble]
 
 esp32:
@@ -42,33 +40,39 @@ switch:
     entity_category: config
 
 sensor:
-  # Fast group (polled every 10s in a batch)
+  # Fast group (polled every 10s in a single GetListRequest batch)
   - platform: bdr_ble
     update_interval: 10s
     sensors:
       - parameter: AM027
-        name: "Outside Temperature"
+        name: "Strateo Outside Temperature"
       - parameter: AM016
-        name: "Flow Temperature"
-      - parameter: AM018
-        name: "Return Temperature"
-      - parameter: BM000
-        name: "DHW Tank Temperature"
+        name: "Strateo Flow Temperature"
+      - parameter: DM001
+        name: "Strateo DHW Temperature"
       - parameter: AM019
-        name: "Water Pressure"
+        name: "Strateo Water Pressure"
 
-  # Slow group (polled every 60s in a batch)
+  # Slow group (polled every 60s in a single GetListRequest batch)
   - platform: bdr_ble
     update_interval: 60s
     sensors:
       - parameter: AC005
-        name: "CH Energy Consumed"
+        name: "Strateo Energy CH Consumption"
       - parameter: AC006
-        name: "DHW Energy Consumed"
-      - parameter: varApTotalEnergyConsumption
-        name: "Total Energy Consumed"
-      - parameter: AC018
-        name: "Backup Heater Energy Consumed"
+        name: "Strateo Energy DHW Consumption"
+      - parameter: AC007
+        name: "Strateo Energy Total Consumption"
+      - parameter: AC026
+        name: "Strateo Energy Backup Consumption"
+      - parameter: AC008
+        name: "Strateo Energy CH Delivery"
+      - parameter: AC009
+        name: "Strateo Energy DHW Delivery"
+      - parameter: AC019
+        name: "Strateo Energy Backup Delivery"
+      - parameter: varApTotalEnergyDelivery
+        name: "Strateo Energy Total Production"
 
 text_sensor:
   - platform: bdr_ble

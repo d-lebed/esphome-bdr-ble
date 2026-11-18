@@ -9,10 +9,6 @@ An **ESPHome external component (`bdr_ble`)** for monitoring and controlling **B
 
 Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Bluetooth interface** (the same BLE interface used by the official *De Dietrich PRO*, *Baxi Service Tool*, and *Remeha Smart Service* mobile apps) using any standard **ESP32** (`ESP32`, `ESP32-S3`, `ESP32-C3`, `ESP32-C6`) — **no proprietary `GTW-08` gateway or wiring required**, and your existing **OpenTherm / R-Bus** room thermostat remains untouched.
 
-> ### ⚠️ IMPORTANT WARNING — USE AT YOUR OWN RISK & WARRANTY DISCLAIMER
-> 1. **Tested Hardware Scope:** This component has been **physically tested ONLY on a De Dietrich Strateo R32 (`EHC-08` controller board)**. Other BDR Thermea models and controller boards (`EHC-*`, `CU-*`, `SCB-*`) are **untested theoretical matches** based on the shared protocol and Object Dictionary in the official mobile service app.
-> 2. **Risk of Damage & Loss of Warranty:** Connecting third-party hardware/software or modifying installer-level (`auth_level: 4`) parameters over BLE/CANopen is done **entirely at your own risk** and **may void your manufacturer or installer warranty** or cause equipment malfunction. The author accepts **zero liability** for any damage, malfunction, or warranty loss. See the [full Disclaimer & Legal Notice](#disclaimer--limitation-of-liability) below before proceeding.
-
 ---
 
 ## 📖 Documentation & Interactive YAML Configurator

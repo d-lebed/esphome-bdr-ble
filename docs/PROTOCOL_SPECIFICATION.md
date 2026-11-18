@@ -298,10 +298,14 @@ To read multiple parameters in a single round-trip (up to ~1412–1518 bytes per
 ### Dynamic Appliance Menu Discovery (`0x502B` `varApMenuDescriptor`)
 Modern CAN-IP / BLE controllers (`EHC-*`, `CU-GH*`, `CU-OH*`, `CU-HW*`, `SCB-*`) dynamically report their active parameters, live signals, and counters via **`Index = 0x502B` (`varApMenuDescriptor`), `SubIndex = 1..15`**:
 
-- **SubIndex Partitioning**:
-  - `SubIndex 1..5`: Active configuration **Parameters** (`AP`, `HP`/`GP`/`CP`, `ZP`, `DP`, `SP`/`BP`)
-  - `SubIndex 6..10`: Active live **Signals / Measurements** (`AM`, `HM`/`GM`/`CM`, `ZM`, `DM`, `SM`/`BM`)
-  - `SubIndex 11..15`: Active cumulative **Counters** (`AC`, `HC`/`GC`/`CC`, `ZC`, `DC`, `SC`)
+- **SubIndex Partitioning & Hardware Access Levels (`auth_level 1..5`)**:
+  Each of the three categories (Parameters, Signals, Counters) is split across 5 `SubIndex` slots corresponding to the 5 authorization levels (`level = ((SubIndex - 1) % 5) + 1`):
+  - **Level 1 — End User (`SubIndex 1, 6, 11`)**: Safe user-facing parameters (`DP070`, `DP080`, `DP200`, `CP320`, schedules), basic live signals (`AM016`, `AM019`, `AM027`, `BM000`, `DM001`), and primary counters (`AC001`, `AC003`, `AC005`–`AC007`, `AC018`, `AC019`, `AC032`, `DC002`–`DC005`, `PC000`, `PC005`).
+  - **Level 2 — Installer Standard (`SubIndex 2, 7, 12`)**: Standard commissioning parameters (`CP000`, `CP230`, `DP120`) and thermal energy delivery counters (`AC002`, `AC004`, `AC008`–`AC010`, `varApTotalEnergyDelivery`).
+  - **Level 3 — Installer Special / Service (`SubIndex 3, 8, 13`)**: Advanced heat pump / hydraulic parameters (`HP000`, `DP037`, `DP038`, `DP090`) and detailed service counters (`AC013`, `AC026`, `AC027`, `AC028`, `AC030`, `PC002`, `PC003`).
+  - **Level 4 — Lab Testing / OEM (`SubIndex 4, 9, 14`)**: Low-level factory/OEM parameters and diagnostics.
+  - **Level 5 — Controls Department Only (`SubIndex 5, 10, 15`)**: R&D reserved (returns empty/NACK on production units).
+  - **Hardware Enforcement**: The boiler controller enforces `auth_level` on both reads and writes. If the RUB session is authenticated at `auth_level: 2`, any read or write request for a datapoint in `SubIndex 3, 8, 13` (Level 3) or `SubIndex 4, 9, 14` (Level 4) is rejected by the boiler with `status = 0x02` (`SDO Abort`).
 - **Binary Payload Structure**:
   - `byte[0..1]`: `uint16_t count` (Little-Endian — number of 15-byte descriptors in this `SubIndex`)
   - `byte[2..3]`: reserved / flags (`2 bytes`)

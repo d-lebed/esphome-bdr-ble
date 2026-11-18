@@ -712,13 +712,66 @@ text_sensor:
       <section id="configuration">
         <h2>Configuration Reference</h2>
 
-        <h3>1. Hub (<code>bdr_ble</code>)</h3>
+        <h3>1. Hub (<code>bdr_ble</code>) &amp; Access Levels (<code>auth_level</code>)</h3>
         <pre><code>bdr_ble:
   id: boiler_hub
   ble_client_id: boiler_ble       # Required: ID of the ble_client entry
   pin: !secret strateo_ble_pin    # Optional: 6-digit BLE pairing passkey (0..999999)
   node_id: 1                      # Optional: Default CANopen Node ID (default: 1 = main Control Unit)
-  auth_level: 4                   # Optional: TEA authorization level (default: 4 = Service/Installer)</code></pre>
+  auth_level: 3                   # Optional: TEA authorization level 1..4 (default: 4)</code></pre>
+
+        <p>
+          <strong>How <code>auth_level</code> works in the boiler controller:</strong><br />
+          The boiler's CANopen controller partitions all parameters (<code>0x502B</code> <code>SubIndex 1..5</code>), live signals (<code>SubIndex 6..10</code>), and counters (<code>SubIndex 11..15</code>) into 5 hardware access levels. The boiler itself enforces these permissions: if you configure a lower <code>auth_level</code> (for example, <code>auth_level: 1</code> or <code>2</code>), the boiler will refuse both reading and writing any datapoint belonging to a higher level (returning SDO Abort / <code>status = 0x02</code>).
+        </p>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th><code>auth_level</code></th>
+                <th>Role / Level Name</th>
+                <th><code>0x502B</code> Tables (Param / Signal / Counter)</th>
+                <th>Accessible Datapoints &amp; Safety Scope (Verified on EHC-08)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong><code>1</code></strong></td>
+                <td><strong>End User (Safe)</strong></td>
+                <td><code>SubIndex 1, 6, 11</code></td>
+                <td><strong>Only safe user-facing settings and basic telemetry:</strong><br />• DHW Comfort / Eco / Holiday setpoints (<code>DP070</code>, <code>DP080</code>, <code>DP337</code>), DHW &amp; Zone operating modes (<code>DP200</code>, <code>CP320</code>), weekly schedules<br />• Basic temperatures &amp; pressure (<code>AM016</code> flow, <code>AM027</code> outdoor, <code>BM000</code>/<code>DM001</code> DHW, <code>AM019</code> water pressure)<br />• 14 primary energy &amp; runtime counters (<code>AC001</code>, <code>AC003</code>, <code>AC005</code>–<code>AC007</code>, <code>AC018</code>, <code>AC019</code>, <code>AC032</code>, <code>DC002</code>–<code>DC005</code>, <code>PC000</code>, <code>PC005</code>)</td>
+              </tr>
+              <tr>
+                <td><strong><code>2</code></strong></td>
+                <td><strong>Installer — Standard</strong><br /><em>(90% field settings)</em></td>
+                <td><code>SubIndex 1..2, 6..7, 11..12</code></td>
+                <td>Everything in Level 1, plus standard commissioning parameters &amp; thermal delivery counters:<br />• Zone max flow setpoint (<code>CP000</code>), heating curve settings (<code>CP230</code>), DHW hysteresis (<code>DP120</code>)<br />• Thermal energy delivery counters (<code>AC002</code>, <code>AC004</code>, <code>AC008</code>, <code>AC009</code>, <code>AC010</code>, <code>varApTotalEnergyDelivery</code>)</td>
+              </tr>
+              <tr>
+                <td><strong><code>3</code></strong></td>
+                <td><strong>Installer — Special / Service</strong><br /><em>(Recommended for full monitoring)</em></td>
+                <td><code>SubIndex 1..3, 6..8, 11..13</code></td>
+                <td>Everything in Levels 1–2, plus advanced heat pump / hydraulic settings and service counters:<br />• Bivalent temperature (<code>HP000</code>), pump speed limits (<code>DP037</code>, <code>DP038</code>), backup heater delays (<code>DP090</code>)<br />• Service counters in <code>SubIndex 13</code>: average COP/performance factor (<code>AC013</code>), pump hours &amp; starts (<code>AC026</code>, <code>AC027</code>), backup 1 hours &amp; starts (<code>AC028</code>, <code>AC030</code>), total heat generator starts &amp; hours (<code>PC002</code>, <code>PC003</code>)<br />• <em>Keeps Level 4 factory/lab parameters locked by the boiler.</em></td>
+              </tr>
+              <tr>
+                <td><strong><code>4</code></strong></td>
+                <td><strong>Lab Testing / OEM</strong><br /><em>(Default)</em></td>
+                <td><code>SubIndex 1..4, 6..9, 11..14</code></td>
+                <td>Unlocks all datapoints (Levels 1–4), including low-level factory/OEM inverter, compressor, and PID parameters.</td>
+              </tr>
+              <tr>
+                <td><strong><code>5</code></strong></td>
+                <td><strong>Controls Dept Only</strong></td>
+                <td><code>SubIndex 1..15</code></td>
+                <td>Reserved for R&amp;D controls engineering (not used on production boilers).</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <strong>Tip:</strong> The <a href="./configurator.html">Interactive YAML Configurator</a> displays an <code>L1</code>–<code>L4</code> badge on every datapoint and automatically calculates the minimum required <code>auth_level</code> for your selected sensors and parameters.
+        </div>
 
         <h3>2. Numeric Sensors (<code>sensor</code>)</h3>
         <p>

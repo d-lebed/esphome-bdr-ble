@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **7-Language Localization (`EN`, `DE`, `FR`, `NL`, `PL`, `IT`, `ES`):**
   - Added localized README files (`README.de.md`, `README.fr.md`, `README.nl.md`, `README.pl.md`, `README.it.md`, `README.es.md`).
-  - Added external UI translation bundles (`docs/i18n/index_i18n.js` and `docs/i18n/configurator_ui_i18n.js`) and on-demand catalog translation dictionaries (`docs/i18n/{de,fr,nl,pl,it,es}.{js,json}`) covering all 3,092 datapoints, 233 Function Groups, and 204 Enum tables without increasing ESPHome firmware size.
+  - Added external UI translation bundles (`docs/i18n/index_i18n.js` and `docs/i18n/configurator_ui_i18n.js`) and on-demand catalog translation dictionaries (`docs/i18n/{de,fr,nl,pl,it,es}.js`) covering all 3,092 datapoints, 233 Function Groups, and 204 Enum tables without increasing ESPHome firmware size.
   - Added a flag dropdown language selector to `docs/index.html` and `docs/configurator.html` with `localStorage` persistence and localized YAML `name:` generation.
 - **Interactive Scrollspy & Collapsible Submenus (`docs/index.html`):**
   - Added real-time scrollspy highlighting for the sidebar Table of Contents and top navigation bar, automatically expanding subsection (`<h3>`) submenus for the active section.

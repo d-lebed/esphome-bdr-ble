@@ -158,6 +158,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                                                   BdrDataType data_type, float scale);
 
   void publish_status_(const char *msg);
+  void resolve_gatt_handles_();
   void handle_pairing_failure_(const uint8_t *bda, uint8_t reason);
   void log_rx_hex_(const char *prefix, const uint8_t *data, uint16_t len,
                    bool info_level = false);
@@ -195,6 +196,8 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   bool has_pin_{false};
   bool pairing_failed_{false};
   bool auth_cmpl_handled_{false};
+  bool gatt_search_completed_{false};
+  bool ble_sec_ready_{false};
   uint8_t pairing_fail_count_{0};
   bool pairing_backoff_active_{false};
   uint32_t pairing_backoff_until_ms_{0};
@@ -203,6 +206,20 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t retry_count_{0};
   uint8_t consecutive_timeouts_{0};
   uint8_t snapshot_sub_idx_{1};
+
+  uint16_t h_direct_tx_{HANDLE_DIRECT_TX};
+  uint16_t h_direct_rx_{HANDLE_DIRECT_RX};
+  uint16_t h_direct_rx_cccd_{HANDLE_DIRECT_RX_CCCD};
+  uint16_t h_svc2_ch1_{HANDLE_SVC2_CH1};
+  uint16_t h_svc2_ch1_cccd_{HANDLE_SVC2_CH1_CCCD};
+  uint16_t h_svc2_ch2_{HANDLE_SVC2_CH2};
+  uint16_t h_svc2_ch2_cccd_{HANDLE_SVC2_CH2_CCCD};
+  uint16_t h_svc3_trig_{HANDLE_SVC3_TRIG};
+  uint16_t h_svc3_chal_{HANDLE_SVC3_CHAL};
+  uint16_t h_svc3_chal_cccd_{HANDLE_SVC3_CHAL_CCCD};
+  uint16_t h_svc3_resp_{HANDLE_SVC3_RESP};
+  uint16_t h_svc3_ack_{HANDLE_SVC3_ACK};
+  uint16_t h_svc3_ack_cccd_{HANDLE_SVC3_ACK_CCCD};
   std::vector<uint32_t> discovered_datapoints_;
 
   std::vector<PollGroup> poll_groups_;

@@ -8,13 +8,13 @@ namespace esphome::bdr_ble {
 
 inline constexpr const char *TAG = "bdr_ble";
 
-// Fixed GATT Attribute Handles on CU-GH08 / EHC-08 / MK3 BLE Module
+// Default GATT Attribute Handles on EHC-08 (resolved dynamically by UUID on connect)
 inline constexpr uint16_t HANDLE_DIRECT_TX = 18;       // 496b1b03 (Write)
 inline constexpr uint16_t HANDLE_DIRECT_RX = 20;       // ab9af948 (Notify)
 inline constexpr uint16_t HANDLE_DIRECT_RX_CCCD = 21;
-inline constexpr uint16_t HANDLE_SVC2_CH1 = 23;        // 0c66c55b (Notify)
+inline constexpr uint16_t HANDLE_SVC2_CH1 = 23;        // cff32957 (Notify)
 inline constexpr uint16_t HANDLE_SVC2_CH1_CCCD = 24;
-inline constexpr uint16_t HANDLE_SVC2_CH2 = 27;        // de00707b (Notify)
+inline constexpr uint16_t HANDLE_SVC2_CH2 = 27;        // 5b5dcf8d (Notify)
 inline constexpr uint16_t HANDLE_SVC2_CH2_CCCD = 28;
 inline constexpr uint16_t HANDLE_SVC3_TRIG = 31;       // 94e54dc4 (Write 0 bytes)
 inline constexpr uint16_t HANDLE_SVC3_CHAL = 33;       // 69092300 (Notify 8 bytes)
@@ -22,6 +22,16 @@ inline constexpr uint16_t HANDLE_SVC3_CHAL_CCCD = 34;
 inline constexpr uint16_t HANDLE_SVC3_RESP = 36;       // f1ca5aeb (Write 9 bytes)
 inline constexpr uint16_t HANDLE_SVC3_ACK = 38;        // e2c47825 (Notify 1 byte)
 inline constexpr uint16_t HANDLE_SVC3_ACK_CCCD = 39;
+
+// 128-bit Characteristic UUIDs for dynamic GATT handle discovery (EHC-08, EHC-16, CU-*, GTW-22, GTW-IoT)
+inline constexpr const char *UUID_DIRECT_TX = "496b1b03-cebc-4d59-9c32-14ea88c266f9";
+inline constexpr const char *UUID_DIRECT_RX = "ab9af948-fb86-492d-820d-bdea2dcb7ecf";
+inline constexpr const char *UUID_SVC2_CH1 = "cff32957-5279-4075-bf3d-8e583d418c0d";
+inline constexpr const char *UUID_SVC2_CH2 = "5b5dcf8d-57f0-455e-b88e-e8e080031032";
+inline constexpr const char *UUID_SVC3_TRIG = "94e54dc4-f69a-4c0c-8a6f-cc8f3135c665";
+inline constexpr const char *UUID_SVC3_CHAL = "69092300-a182-4fea-803b-24ada406da8a";
+inline constexpr const char *UUID_SVC3_RESP = "f1ca5aeb-02cd-44a8-972b-44b6e7250d0b";
+inline constexpr const char *UUID_SVC3_ACK = "e2c47825-6dff-4d79-b74a-5bdc4f4661cf";
 
 // DirectChannel & CAN-IP / RUB v2.01 protocol constants
 inline constexpr uint8_t DIRECT_CHANNEL_CAN = 0x01;

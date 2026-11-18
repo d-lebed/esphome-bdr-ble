@@ -19,7 +19,10 @@ void BdrBleComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  Default Node ID: 0x%02X", this->default_node_id_);
   ESP_LOGCONFIG(TAG, "  Auth Level: %u", this->auth_level_);
   if (this->has_pin_) {
-    ESP_LOGCONFIG(TAG, "  PIN: ****%02u", static_cast<unsigned>(this->pin_ % 100));
+    ESP_LOGCONFIG(TAG, "  PIN: ****%02u (Passkey pairing mode)",
+                  static_cast<unsigned>(this->pin_ % 100));
+  } else {
+    ESP_LOGCONFIG(TAG, "  PIN: none (GTW-IoT plain BLE mode)");
   }
   ESP_LOGCONFIG(TAG, "  Poll Groups: %zu", this->poll_groups_.size());
   for (size_t i = 0; i < this->poll_groups_.size(); i++) {
@@ -175,6 +178,108 @@ void BdrBleComponent::publish_status_(const char *msg) {
 #endif
 }
 
+void BdrBleComponent::resolve_gatt_handles_() {
+  if (this->parent() == nullptr) {
+    return;
+  }
+  namespace espbt = esphome::esp32_ble_tracker;
+  auto gattc_if = this->parent()->get_gattc_if();
+  auto conn_id = this->parent()->get_conn_id();
+
+  uint16_t count = 0;
+  esp_gatt_status_t st = esp_ble_gattc_get_attr_count(
+      gattc_if, conn_id, ESP_GATT_DB_ALL, 0x0001, 0xFFFF, 0, &count);
+  if (st != ESP_GATT_OK || count == 0) {
+    ESP_LOGW(TAG, "GATT DB empty or unavailable (status=%d); using default handles",
+             st);
+    return;
+  }
+
+  std::vector<esp_gattc_db_elem_t> db(count);
+  uint16_t got = count;
+  st = esp_ble_gattc_get_db(gattc_if, conn_id, 0x0001, 0xFFFF, db.data(), &got);
+  if (st != ESP_GATT_OK || got == 0) {
+    ESP_LOGW(TAG, "esp_ble_gattc_get_db failed (status=%d); using default handles",
+             st);
+    return;
+  }
+
+  uint16_t tx = 0, rx = 0, rx_cccd = 0;
+  uint16_t ch1 = 0, ch1_cccd = 0, ch2 = 0, ch2_cccd = 0;
+  uint16_t s3_trig = 0, s3_chal = 0, s3_chal_cccd = 0, s3_resp = 0, s3_ack = 0,
+           s3_ack_cccd = 0;
+
+  struct Target {
+    espbt::ESPBTUUID uuid;
+    uint16_t *val_handle;
+    uint16_t *cccd_handle;
+  };
+  Target targets[] = {
+      {espbt::ESPBTUUID::from_raw(UUID_DIRECT_TX), &tx, nullptr},
+      {espbt::ESPBTUUID::from_raw(UUID_DIRECT_RX), &rx, &rx_cccd},
+      {espbt::ESPBTUUID::from_raw(UUID_SVC2_CH1), &ch1, &ch1_cccd},
+      {espbt::ESPBTUUID::from_raw(UUID_SVC2_CH2), &ch2, &ch2_cccd},
+      {espbt::ESPBTUUID::from_raw(UUID_SVC3_TRIG), &s3_trig, nullptr},
+      {espbt::ESPBTUUID::from_raw(UUID_SVC3_CHAL), &s3_chal, &s3_chal_cccd},
+      {espbt::ESPBTUUID::from_raw(UUID_SVC3_RESP), &s3_resp, nullptr},
+      {espbt::ESPBTUUID::from_raw(UUID_SVC3_ACK), &s3_ack, &s3_ack_cccd},
+  };
+  constexpr size_t num_targets = sizeof(targets) / sizeof(targets[0]);
+
+  int active_target = -1;
+  for (uint16_t i = 0; i < got; i++) {
+    const auto &elem = db[i];
+    if (elem.type == ESP_GATT_DB_CHARACTERISTIC) {
+      active_target = -1;
+      espbt::ESPBTUUID char_uuid = espbt::ESPBTUUID::from_uuid(elem.uuid);
+      for (size_t k = 0; k < num_targets; k++) {
+        if (char_uuid == targets[k].uuid) {
+          *targets[k].val_handle = elem.attribute_handle;
+          active_target = static_cast<int>(k);
+          break;
+        }
+      }
+    } else if (elem.type == ESP_GATT_DB_DESCRIPTOR &&
+               elem.uuid.len == ESP_UUID_LEN_16 &&
+               elem.uuid.uuid.uuid16 == 0x2902) {
+      if (active_target >= 0 && targets[active_target].cccd_handle != nullptr) {
+        *targets[active_target].cccd_handle = elem.attribute_handle;
+      }
+    }
+  }
+
+  if (tx != 0 && rx != 0) {
+    this->h_direct_tx_ = tx;
+    this->h_direct_rx_ = rx;
+    this->h_direct_rx_cccd_ = (rx_cccd != 0) ? rx_cccd : static_cast<uint16_t>(rx + 1);
+    this->h_svc2_ch1_ = ch1;
+    this->h_svc2_ch1_cccd_ = ch1_cccd;
+    this->h_svc2_ch2_ = ch2;
+    this->h_svc2_ch2_cccd_ = ch2_cccd;
+    if (s3_trig != 0) this->h_svc3_trig_ = s3_trig;
+    if (s3_chal != 0) {
+      this->h_svc3_chal_ = s3_chal;
+      this->h_svc3_chal_cccd_ =
+          (s3_chal_cccd != 0) ? s3_chal_cccd : static_cast<uint16_t>(s3_chal + 1);
+    }
+    if (s3_resp != 0) this->h_svc3_resp_ = s3_resp;
+    if (s3_ack != 0) {
+      this->h_svc3_ack_ = s3_ack;
+      this->h_svc3_ack_cccd_ =
+          (s3_ack_cccd != 0) ? s3_ack_cccd : static_cast<uint16_t>(s3_ack + 1);
+    }
+    ESP_LOGI(TAG,
+             "Resolved GATT handles by UUID: Direct(tx=%u rx=%u/%u) "
+             "Svc3(trig=%u chal=%u/%u resp=%u ack=%u/%u) Aux(ch1=%u ch2=%u)",
+             this->h_direct_tx_, this->h_direct_rx_, this->h_direct_rx_cccd_,
+             this->h_svc3_trig_, this->h_svc3_chal_, this->h_svc3_chal_cccd_,
+             this->h_svc3_resp_, this->h_svc3_ack_, this->h_svc3_ack_cccd_,
+             this->h_svc2_ch1_, this->h_svc2_ch2_);
+  } else {
+    ESP_LOGW(TAG, "DirectChannel UUIDs not found in GATT DB; using default EHC-08 handles");
+  }
+}
+
 void BdrBleComponent::handle_pairing_failure_(const uint8_t *bda,
                                               uint8_t reason) {
   bool had_bond = false;
@@ -318,7 +423,7 @@ void BdrBleComponent::send_next_tx_fragment_() {
 
   esp_err_t err = esp_ble_gattc_write_char(
       this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
-      HANDLE_DIRECT_TX, chunk_len + 1, pkt, ESP_GATT_WRITE_TYPE_RSP,
+      this->h_direct_tx_, chunk_len + 1, pkt, ESP_GATT_WRITE_TYPE_RSP,
       ESP_GATT_AUTH_REQ_NONE);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "DirectChannel write_char failed: %d", err);
@@ -407,6 +512,21 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->pairing_failed_ = false;
         this->pairing_backoff_active_ = false;
         this->auth_cmpl_handled_ = false;
+        this->gatt_search_completed_ = false;
+        this->ble_sec_ready_ = !this->has_pin_;
+        this->h_direct_tx_ = HANDLE_DIRECT_TX;
+        this->h_direct_rx_ = HANDLE_DIRECT_RX;
+        this->h_direct_rx_cccd_ = HANDLE_DIRECT_RX_CCCD;
+        this->h_svc2_ch1_ = HANDLE_SVC2_CH1;
+        this->h_svc2_ch1_cccd_ = HANDLE_SVC2_CH1_CCCD;
+        this->h_svc2_ch2_ = HANDLE_SVC2_CH2;
+        this->h_svc2_ch2_cccd_ = HANDLE_SVC2_CH2_CCCD;
+        this->h_svc3_trig_ = HANDLE_SVC3_TRIG;
+        this->h_svc3_chal_ = HANDLE_SVC3_CHAL;
+        this->h_svc3_chal_cccd_ = HANDLE_SVC3_CHAL_CCCD;
+        this->h_svc3_resp_ = HANDLE_SVC3_RESP;
+        this->h_svc3_ack_ = HANDLE_SVC3_ACK;
+        this->h_svc3_ack_cccd_ = HANDLE_SVC3_ACK_CCCD;
         this->cccd_step_ = 0;
         this->retry_count_ = 0;
         this->consecutive_timeouts_ = 0;
@@ -430,9 +550,13 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
           }
         }
         this->last_action_ms_ = millis();
-        this->publish_status_("Connected (pairing...)");
-        if (this->parent() != nullptr) {
-          this->parent()->pair();
+        if (this->has_pin_) {
+          this->publish_status_("Connected (pairing...)");
+          if (this->parent() != nullptr) {
+            this->parent()->pair();
+          }
+        } else {
+          this->publish_status_("Connected (GTW-IoT / no PIN)");
         }
       } else {
         ESP_LOGW(TAG, "GATT open failed: status=%d", param->open.status);
@@ -449,6 +573,8 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
 
     case ESP_GATTC_DISCONNECT_EVT:
       this->state_ = STATE_DISCONNECTED;
+      this->gatt_search_completed_ = false;
+      this->ble_sec_ready_ = false;
       this->active_group_idx_ = -1;
       this->in_flight_type_ = IN_FLIGHT_NONE;
       this->tx_frame_buf_.clear();
@@ -464,7 +590,7 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
       break;
 
     case ESP_GATTC_WRITE_CHAR_EVT:
-      if (param->write.handle == HANDLE_DIRECT_TX) {
+      if (param->write.handle == this->h_direct_tx_) {
         if (param->write.status != ESP_GATT_OK) {
           ESP_LOGW(TAG, "DirectChannel GATT write failed: status=0x%02X",
                    param->write.status);
@@ -477,16 +603,26 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
       break;
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      static const uint16_t NOTIFY_HANDLES[5] = {
-          HANDLE_SVC3_CHAL, HANDLE_SVC3_ACK, HANDLE_DIRECT_RX, HANDLE_SVC2_CH1,
-          HANDLE_SVC2_CH2};
-      for (uint16_t h : NOTIFY_HANDLES) {
-        esp_ble_gattc_register_for_notify(
-            gattc_if, this->parent()->get_remote_bda(), h);
+      this->resolve_gatt_handles_();
+      const uint16_t notify_handles[5] = {
+          this->h_svc3_chal_, this->h_svc3_ack_, this->h_direct_rx_,
+          this->h_svc2_ch1_, this->h_svc2_ch2_};
+      for (uint16_t h : notify_handles) {
+        if (h != 0) {
+          esp_ble_gattc_register_for_notify(
+              gattc_if, this->parent()->get_remote_bda(), h);
+        }
       }
       this->node_state = esphome::esp32_ble_tracker::ClientState::ESTABLISHED;
+      this->gatt_search_completed_ = true;
       this->last_action_ms_ = millis();
-      this->publish_status_("GATT ready (waiting for encryption)");
+      if (this->ble_sec_ready_ && this->state_ == STATE_CONNECTED_WAIT_SEC) {
+        this->publish_status_("Subscribing to GATT notifications");
+        this->state_ = STATE_SUBSCRIBING;
+        this->cccd_step_ = 0;
+      } else {
+        this->publish_status_("GATT ready (waiting for encryption)");
+      }
       break;
     }
 
@@ -529,7 +665,9 @@ void BdrBleComponent::gap_event_handler(esp_gap_ble_cb_event_t event,
       this->pairing_failed_ = false;
       this->pairing_fail_count_ = 0;
       this->pairing_backoff_active_ = false;
-      if (this->state_ == STATE_CONNECTED_WAIT_SEC) {
+      this->ble_sec_ready_ = true;
+      if (this->gatt_search_completed_ &&
+          this->state_ == STATE_CONNECTED_WAIT_SEC) {
         this->state_ = STATE_SUBSCRIBING;
         this->cccd_step_ = 0;
         this->last_action_ms_ = millis();
@@ -565,7 +703,7 @@ void BdrBleComponent::loop() {
     if (!this->pairing_failed_ && (now - this->last_action_ms_ >= AUTH_COOLDOWN_MS)) {
       ESP_LOGI(TAG, "Auth cooldown elapsed; retrying BLE unlock");
       this->publish_status_("Unlocking BLE (Service 3)");
-      this->send_zero_length_write_(HANDLE_SVC3_TRIG);
+      this->send_zero_length_write_(this->h_svc3_trig_);
       this->state_ = STATE_SVC3_WAIT_CHALLENGE;
       this->retry_count_ = 0;
       this->last_action_ms_ = now;
@@ -588,15 +726,19 @@ void BdrBleComponent::loop() {
     }
     this->last_action_ms_ = now;
 
-    static const uint16_t CCCD_HANDLES[5] = {
-        HANDLE_SVC3_CHAL_CCCD, HANDLE_SVC3_ACK_CCCD, HANDLE_DIRECT_RX_CCCD,
-        HANDLE_SVC2_CH1_CCCD, HANDLE_SVC2_CH2_CCCD};
+    const uint16_t cccd_handles[5] = {
+        this->h_svc3_chal_cccd_, this->h_svc3_ack_cccd_,
+        this->h_direct_rx_cccd_, this->h_svc2_ch1_cccd_,
+        this->h_svc2_ch2_cccd_};
+    while (this->cccd_step_ < 5 && cccd_handles[this->cccd_step_] == 0) {
+      this->cccd_step_++;
+    }
     if (this->cccd_step_ < 5) {
-      this->write_cccd_(CCCD_HANDLES[this->cccd_step_]);
+      this->write_cccd_(cccd_handles[this->cccd_step_]);
       this->cccd_step_++;
     } else {
       this->publish_status_("Unlocking BLE (Service 3)");
-      this->send_zero_length_write_(HANDLE_SVC3_TRIG);
+      this->send_zero_length_write_(this->h_svc3_trig_);
       this->state_ = STATE_SVC3_WAIT_CHALLENGE;
       this->retry_count_ = 0;
     }
@@ -610,7 +752,7 @@ void BdrBleComponent::loop() {
       if (this->retry_count_ < 3) {
         this->retry_count_++;
         this->state_ = STATE_SVC3_WAIT_CHALLENGE;
-        this->send_zero_length_write_(HANDLE_SVC3_TRIG);
+        this->send_zero_length_write_(this->h_svc3_trig_);
       } else {
         this->publish_status_("Unlocking CAN-BUS (RUB v2.01)");
         const uint8_t rub_chal_req[6] = {

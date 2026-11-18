@@ -8,12 +8,12 @@ namespace esphome::bdr_ble {
 
 void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
                                      uint16_t len) {
-  if (handle == HANDLE_SVC3_CHAL && len >= 8) {
+  if (handle == this->h_svc3_chal_ && len >= 8) {
     if (this->state_ != STATE_SVC3_WAIT_CHALLENGE &&
         this->state_ != STATE_SVC3_WAIT_RESULT) {
       return;
     }
-    this->log_rx_hex_("SVC3[33]", data, len, true);
+    this->log_rx_hex_("SVC3[CHAL]", data, len, true);
     uint32_t id1 = static_cast<uint32_t>(data[0]) |
                    (static_cast<uint32_t>(data[1]) << 8) |
                    (static_cast<uint32_t>(data[2]) << 16) |
@@ -37,7 +37,7 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
         static_cast<uint8_t>((v1 >> 24) & 0xFF),
     };
     esp_ble_gattc_write_char(this->parent()->get_gattc_if(),
-                             this->parent()->get_conn_id(), HANDLE_SVC3_RESP,
+                             this->parent()->get_conn_id(), this->h_svc3_resp_,
                              sizeof(resp), resp, ESP_GATT_WRITE_TYPE_RSP,
                              ESP_GATT_AUTH_REQ_NONE);
     this->state_ = STATE_SVC3_WAIT_RESULT;
@@ -45,12 +45,12 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
     return;
   }
 
-  if (handle == HANDLE_SVC3_ACK && len >= 1) {
+  if (handle == this->h_svc3_ack_ && len >= 1) {
     if (this->state_ != STATE_SVC3_WAIT_RESULT &&
         this->state_ != STATE_SVC3_WAIT_CHALLENGE) {
       return;
     }
-    this->log_rx_hex_("SVC3[38]", data, len, true);
+    this->log_rx_hex_("SVC3[ACK]", data, len, true);
     if (data[0] == 0x01) {
       this->publish_status_("BLE Unlocked -> RUB Auth");
       const uint8_t rub_chal_req[6] = {
@@ -67,8 +67,8 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
     return;
   }
 
-  // Handle 27: BDR Error Management characteristic (de00707b)
-  if (handle == HANDLE_SVC2_CH2 && len >= 4) {
+  // BDR Error Management characteristic (5b5dcf8d)
+  if (this->h_svc2_ch2_ != 0 && handle == this->h_svc2_ch2_ && len >= 4) {
     ESP_LOGW(TAG, "BLE Error Management notify: [%u, %u, %u, %u]", data[0],
              data[1], data[2], data[3]);
     // [3, 0, 0, 4] = "BLE services locked" -> re-trigger Service 3 unlock
@@ -76,7 +76,7 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
         this->state_ == STATE_READY) {
       this->publish_status_("BLE Services Locked -> Re-unlocking");
       this->in_flight_type_ = IN_FLIGHT_NONE;
-      this->send_zero_length_write_(HANDLE_SVC3_TRIG);
+      this->send_zero_length_write_(this->h_svc3_trig_);
       this->state_ = STATE_SVC3_WAIT_CHALLENGE;
       this->retry_count_ = 0;
       this->last_action_ms_ = millis();
@@ -84,7 +84,7 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
     return;
   }
 
-  if (handle == HANDLE_DIRECT_RX && len >= 2) {
+  if (handle == this->h_direct_rx_ && len >= 2) {
     this->handle_direct_segment_(data, len);
   }
 }

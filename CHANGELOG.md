@@ -7,13 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.1.0] - 2026-11-18
+
 ### Added
 - **Configurator Access Level Filter, View Tabs & `localStorage` Persistence (`docs/configurator.html`):**
   - Added `auth_level` (`L1 End User` .. `L4 Lab/OEM`) safety filter, row badges, and automatic minimum required `auth_level` calculation in the YAML generator.
   - Added segmented view tabs (`All Matching`, `Selected Only`, `Writable`, `Read-Only`) for easier selection review.
   - Added automatic `localStorage` state persistence across page reloads and a `Reset Defaults` button.
   - Enriched `obd_catalog.json` with `lvl` (`1..4`) metadata from `0x502B:01..15` and added `@<level>` tags to `BDR_SNAPSHOT:` log output.
-- Published the interactive ESPHome YAML Constructor and SEO-optimized documentation site on GitHub Pages (`https://d-lebed.github.io/esphome-bdr-ble/`).
+- **GitHub Pages Documentation & `auth_level` Reference:**
+  - Published the interactive ESPHome YAML Constructor and SEO-optimized documentation site on GitHub Pages (`https://d-lebed.github.io/esphome-bdr-ble/`).
+  - Documented the 5 hardware access levels (`auth_level: 1..5`) and their mapping to `0x502B` (`SubIndex 1..15`).
 
 ---
 
@@ -68,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/d-lebed/esphome-bdr-ble/releases/tag/v0.3.0

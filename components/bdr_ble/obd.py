@@ -100,13 +100,18 @@ def resolve_parameter(
     m = _HEX_INDEX_RE.match(param_str)
     if m:
         idx = int(m.group(1), 16)
-        sub = int(m.group(2), 16) if m.group(2) is not None else 0
+        explicit_sub = int(m.group(2), 16) if m.group(2) is not None else None
         if sub_index_override is not None:
-            sub = sub_index_override
-        dp = cat["by_idx_sub"].get((idx, sub)) or cat["by_idx"].get(idx)
+            explicit_sub = sub_index_override
+        dp = (
+            cat["by_idx_sub"].get((idx, explicit_sub))
+            if explicit_sub is not None
+            else None
+        ) or cat["by_idx"].get(idx)
         if dp is not None:
             res = dict(dp)
-            res["sub"] = sub
+            if explicit_sub is not None:
+                res["sub"] = explicit_sub
             return res
         # Allow raw unregistered hex index:sub_index with default U16/I16 fallback if explicitly given
         raise cv.Invalid(

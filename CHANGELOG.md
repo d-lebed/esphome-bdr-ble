@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tracked `waiting_for_get_list_` separately from single-item reads/writes so a single write timeout never falsely downgrades `GetListRequest` batch polling.
 
 ### Fixed
+- **CANopen Array Datapoint Default `SubIndex` (`IsArray="True"`):** Fixed default `sub_index` in `obd_catalog.json` and `docs/configurator.html` for all 916 `IsArray="True"` parameters and signals (such as `DP070`, `DP080`, `DP200`, `CP000`–`CP780`, `CM030`–`CM260`) from `0x00` (which in CANopen is the 1-byte array length header) to `0x01` (Zone 1 / Primary instance, matching the `0x502B` appliance descriptors).
 - **Interactive YAML Constructor (`docs/configurator.html`):**
   - Display all `Enum` values and `FunctionGroup` badges in full without truncating after 5 items (`...`).
   - Improved responsive two-pane grid layout (`55% / 45%` on standard monitors, `52% / 48%` on wide monitors, and vertical stacking on narrow screens `< 1024px`) with `pre-wrap` YAML rendering so wide monitors no longer require horizontal scrolling in the YAML pane.

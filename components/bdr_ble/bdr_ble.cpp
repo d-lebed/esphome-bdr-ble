@@ -1,4 +1,5 @@
 #include "bdr_ble.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -113,6 +114,115 @@ void BdrBleComponent::register_enum_translation(uint16_t index,
   this->enum_translations_[key] = description;
 }
 #endif
+
+#ifdef USE_NUMBER
+void BdrBleNumber::control(float value) {
+  if (this->parent_ == nullptr) {
+    return;
+  }
+  float eff_scale = (this->scale_ > 0.0f) ? this->scale_ : 1.0f;
+  int64_t raw = static_cast<int64_t>(std::llround(value / eff_scale));
+  std::vector<uint8_t> bytes;
+
+  switch (this->data_type_) {
+    case BDR_TYPE_U8:
+    case BDR_TYPE_I8:
+    case BDR_TYPE_ENUM:
+      bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
+      break;
+    case BDR_TYPE_U16:
+    case BDR_TYPE_I16:
+      bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
+      bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
+      break;
+    case BDR_TYPE_U32:
+    case BDR_TYPE_I32:
+      bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
+      bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
+      bytes.push_back(static_cast<uint8_t>((raw >> 16) & 0xFF));
+      bytes.push_back(static_cast<uint8_t>((raw >> 24) & 0xFF));
+      break;
+    default:
+      return;
+  }
+
+  this->publish_state(value);
+  this->parent_->queue_write_datapoint(this->node_id_, this->index_,
+                                       this->sub_index_, bytes);
+}
+
+void BdrBleComponent::register_number(BdrBleNumber *num, uint16_t index,
+                                      uint8_t sub_index, uint8_t data_type,
+                                      float scale, uint32_t interval_ms,
+                                      uint8_t node_id) {
+  uint8_t resolved_node = (node_id == 0xFF) ? this->default_node_id_ : node_id;
+  BdrDataType dt = static_cast<BdrDataType>(data_type);
+  num->set_parent(this);
+  num->set_datapoint_meta(resolved_node, index, sub_index, dt, scale);
+  auto &dp = this->get_or_create_datapoint_(interval_ms, resolved_node, index,
+                                            sub_index, dt, scale);
+  dp.numbers.push_back(num);
+}
+#endif
+
+#ifdef USE_SELECT
+void BdrBleSelect::publish_from_raw(int raw_value) {
+  auto it = this->val_to_label_.find(raw_value);
+  if (it != this->val_to_label_.end()) {
+    this->publish_state(it->second);
+  }
+}
+
+void BdrBleSelect::control(const std::string &value) {
+  if (this->parent_ == nullptr) {
+    return;
+  }
+  auto it = this->label_to_val_.find(value);
+  if (it == this->label_to_val_.end()) {
+    ESP_LOGW(TAG, "Unknown select option '%s' for 0x%04X:%02X", value.c_str(),
+             this->index_, this->sub_index_);
+    return;
+  }
+  int raw_val = it->second;
+  std::vector<uint8_t> bytes = {static_cast<uint8_t>(raw_val & 0xFF)};
+  this->publish_state(value);
+  this->parent_->queue_write_datapoint(this->node_id_, this->index_,
+                                       this->sub_index_, bytes);
+}
+
+void BdrBleComponent::register_select(BdrBleSelect *sel, uint16_t index,
+                                      uint8_t sub_index, uint32_t interval_ms,
+                                      uint8_t node_id) {
+  uint8_t resolved_node = (node_id == 0xFF) ? this->default_node_id_ : node_id;
+  sel->set_parent(this);
+  sel->set_datapoint_meta(resolved_node, index, sub_index);
+  auto &dp = this->get_or_create_datapoint_(
+      interval_ms, resolved_node, index, sub_index, BDR_TYPE_ENUM, 1.0f);
+  dp.selects.push_back(sel);
+}
+#endif
+
+void BdrBleComponent::queue_write_datapoint(uint8_t node_id, uint16_t index,
+                                            uint8_t sub_index,
+                                            const std::vector<uint8_t> &data) {
+  // Replace any queued write for the same (node_id, index, sub_index)
+  for (auto &w : this->write_queue_) {
+    if (w.node_id == node_id && w.index == index && w.sub_index == sub_index) {
+      w.data = data;
+      ESP_LOGI(TAG, "Updated queued write for 0x%04X:%02X (%zu bytes)", index,
+               sub_index, data.size());
+      return;
+    }
+  }
+  PendingWrite pw;
+  pw.node_id = node_id;
+  pw.index = index;
+  pw.sub_index = sub_index;
+  pw.data = data;
+  this->write_queue_.push_back(pw);
+  ESP_LOGI(TAG, "Queued write for 0x%04X:%02X (%zu bytes)", index, sub_index,
+           data.size());
+}
 
 void BdrBleComponent::publish_status_(const char *msg) {
   ESP_LOGI(TAG, "Status: %s", msg);
@@ -251,6 +361,29 @@ void BdrBleComponent::send_read_param_(uint8_t node_id, uint16_t index,
       sub_index,
   };
   this->send_direct_channel_(req, sizeof(req));
+}
+
+void BdrBleComponent::send_write_param_(uint8_t node_id, uint16_t index,
+                                        uint8_t sub_index, const uint8_t *data,
+                                        size_t data_len) {
+  if (data_len == 0 || data_len > 32) {
+    return;
+  }
+  std::vector<uint8_t> req(10 + data_len);
+  req[0] = 0x02;
+  req[1] = 0x01;
+  req[2] = 0x00;
+  req[3] = 0x00;
+  req[4] = 0x04;  // Function 0x04 = Write Confirmed Request
+  req[5] = 0x03;
+  req[6] = node_id;
+  req[7] = static_cast<uint8_t>((index >> 8) & 0xFF);
+  req[8] = static_cast<uint8_t>(index & 0xFF);
+  req[9] = sub_index;
+  std::memcpy(&req[10], data, data_len);
+  ESP_LOGI(TAG, "Sending WriteConfirmedRequest for 0x%04X:%02X (%zu bytes)",
+           index, sub_index, data_len);
+  this->send_direct_channel_(req.data(), req.size());
 }
 
 void BdrBleComponent::send_get_list_batch_(
@@ -474,14 +607,10 @@ void BdrBleComponent::loop() {
   }
 
   if (this->state_ == STATE_READY) {
-    if (this->poll_groups_.empty()) {
-      return;
-    }
-
     // Check if an active request timed out
     if (this->waiting_response_ && (now - this->last_req_ms_ >= 800)) {
       this->waiting_response_ = false;
-      if (this->get_list_stage_ < 2) {
+      if (this->active_group_idx_ >= 0 && this->get_list_stage_ < 2) {
         this->get_list_stage_++;
         if (this->get_list_stage_ == 1) {
           ESP_LOGI(TAG, "GetListRequest v2.01 timed out; trying v2.00 header");
@@ -492,6 +621,23 @@ void BdrBleComponent::loop() {
           this->active_item_idx_ = 0;
         }
       }
+    }
+
+    // Priority 1: Execute any queued parameter writes immediately
+    if (!this->write_queue_.empty() && !this->waiting_response_ &&
+        (now - this->last_action_ms_ >= 60)) {
+      PendingWrite pw = this->write_queue_.front();
+      this->write_queue_.pop_front();
+      this->send_write_param_(pw.node_id, pw.index, pw.sub_index,
+                              pw.data.data(), pw.data.size());
+      this->waiting_response_ = true;
+      this->last_req_ms_ = now;
+      this->last_action_ms_ = now;
+      return;
+    }
+
+    if (this->poll_groups_.empty()) {
+      return;
     }
 
     // If no group is currently bursting, check if any group's interval is due
@@ -752,6 +898,46 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     return;
   }
 
+  // Write Confirmed Positive Ack: 02 01 00 00 05 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx>
+  if (msg_type == 0x00 && func == 0x05 && len >= 10) {
+    this->waiting_response_ = false;
+    uint8_t node_id = payload[6];
+    uint16_t index =
+        (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
+    uint8_t sub_index = payload[9];
+    ESP_LOGI(TAG, "Write ACK for 0x%04X:%02X; reading back value", index,
+             sub_index);
+    this->send_read_param_(node_id, index, sub_index);
+    this->waiting_response_ = true;
+    this->last_req_ms_ = millis();
+    this->last_action_ms_ = this->last_req_ms_;
+    return;
+  }
+
+  // Write Confirmed Negative Ack (SDO Abort): 02 01 00 00 06 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx> <AbortCode(4)>
+  if (msg_type == 0x00 && func == 0x06 && len >= 10) {
+    this->waiting_response_ = false;
+    uint8_t node_id = payload[6];
+    uint16_t index =
+        (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
+    uint8_t sub_index = payload[9];
+    uint32_t abort_code = 0;
+    if (len >= 14) {
+      abort_code = static_cast<uint32_t>(payload[10]) |
+                   (static_cast<uint32_t>(payload[11]) << 8) |
+                   (static_cast<uint32_t>(payload[12]) << 16) |
+                   (static_cast<uint32_t>(payload[13]) << 24);
+    }
+    ESP_LOGW(TAG,
+             "Write NACK for 0x%04X:%02X (SDO abort=0x%08X); reverting state",
+             index, sub_index, static_cast<unsigned>(abort_code));
+    this->send_read_param_(node_id, index, sub_index);
+    this->waiting_response_ = true;
+    this->last_req_ms_ = millis();
+    this->last_action_ms_ = this->last_req_ms_;
+    return;
+  }
+
   // Batch GetListResponse: 02 xx 00 00 09 xx <Count> <Items...>
   if (msg_type == 0x00 && func == 0x09 && len >= 7) {
     this->waiting_response_ = false;
@@ -827,6 +1013,16 @@ void BdrBleComponent::mark_datapoint_unsupported_(uint8_t node_id,
           entity_name = dp.text_sensors[0]->get_name().c_str();
         }
 #endif
+#ifdef USE_NUMBER
+        if (!dp.numbers.empty() && dp.numbers[0] != nullptr) {
+          entity_name = dp.numbers[0]->get_name().c_str();
+        }
+#endif
+#ifdef USE_SELECT
+        if (!dp.selects.empty() && dp.selects[0] != nullptr) {
+          entity_name = dp.selects[0]->get_name().c_str();
+        }
+#endif
         ESP_LOGW(TAG,
                  "Datapoint 0x%04X:%02X (%s) reported unsupported by boiler "
                  "(status=0x%02X); disabling polling",
@@ -855,6 +1051,47 @@ void BdrBleComponent::handle_snapshot_descriptor_(uint8_t sub_index,
     uint16_t dp_idx = static_cast<uint16_t>(data[off + 2]) |
                       (static_cast<uint16_t>(data[off + 3]) << 8);
     uint8_t dp_sub = data[off + 12];
+#ifdef USE_NUMBER
+    uint32_t raw_min_u = static_cast<uint32_t>(data[off + 4]) |
+                         (static_cast<uint32_t>(data[off + 5]) << 8) |
+                         (static_cast<uint32_t>(data[off + 6]) << 16) |
+                         (static_cast<uint32_t>(data[off + 7]) << 24);
+    uint32_t raw_max_u = static_cast<uint32_t>(data[off + 8]) |
+                         (static_cast<uint32_t>(data[off + 9]) << 8) |
+                         (static_cast<uint32_t>(data[off + 10]) << 16) |
+                         (static_cast<uint32_t>(data[off + 11]) << 24);
+    uint8_t raw_inc = data[off + 13];
+    if (raw_min_u != 0xFFFFFFFFUL && raw_max_u != 0xFFFFFFFFUL) {
+      for (auto &grp : this->poll_groups_) {
+        for (auto &dp : grp.items) {
+          if (dp.index == dp_idx && dp.sub_index == dp_sub &&
+              !dp.numbers.empty()) {
+            bool is_signed = (dp.data_type == BDR_TYPE_I8 ||
+                              dp.data_type == BDR_TYPE_I16 ||
+                              dp.data_type == BDR_TYPE_I32);
+            float min_f = is_signed
+                              ? static_cast<float>(static_cast<int32_t>(raw_min_u)) * dp.scale
+                              : static_cast<float>(raw_min_u) * dp.scale;
+            float max_f = is_signed
+                              ? static_cast<float>(static_cast<int32_t>(raw_max_u)) * dp.scale
+                              : static_cast<float>(raw_max_u) * dp.scale;
+            if (min_f < max_f) {
+              for (auto *num : dp.numbers) {
+                num->traits.set_min_value(min_f);
+                num->traits.set_max_value(max_f);
+                if (raw_inc > 0 && raw_inc != 0xFF) {
+                  num->traits.set_step(static_cast<float>(raw_inc) * dp.scale);
+                }
+              }
+              ESP_LOGI(TAG,
+                       "Updated limits for 0x%04X:%02X from 0x502B: min=%.2f max=%.2f",
+                       dp_idx, dp_sub, min_f, max_f);
+            }
+          }
+        }
+      }
+    }
+#endif
     uint32_t packed = (static_cast<uint32_t>(dp_idx) << 8) | dp_sub;
     bool exists = false;
     for (uint32_t existing : this->discovered_datapoints_) {
@@ -1016,6 +1253,22 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
       if (valid_numeric) {
         for (auto *sens : dp.sensors) {
           sens->publish_state(numeric_val);
+        }
+      }
+#endif
+
+#ifdef USE_NUMBER
+      if (valid_numeric) {
+        for (auto *num : dp.numbers) {
+          num->publish_state(numeric_val);
+        }
+      }
+#endif
+
+#ifdef USE_SELECT
+      if (valid_numeric && dp.data_type == BDR_TYPE_ENUM) {
+        for (auto *sel : dp.selects) {
+          sel->publish_from_raw(static_cast<int>(raw_enum_val));
         }
       }
 #endif

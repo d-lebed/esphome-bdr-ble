@@ -219,3 +219,44 @@ def infer_sensor_metadata(dp: dict[str, Any]) -> dict[str, Any]:
     desc = dp.get("label", "") or dp.get("desc", "") or dp.get("name", "")
     meta["default_name"] = desc.strip()
     return meta
+
+
+def infer_number_metadata(dp: dict[str, Any]) -> dict[str, Any]:
+    """Infer ESPHome number metadata (min_value, max_value, step, unit, device_class, icon) from OBD."""
+    base = infer_sensor_metadata(dp)
+    dtype = dp.get("type", "U16")
+    unit_raw = dp.get("unit", "")
+    gain = float(dp.get("gain", 1.0))
+    step = gain if gain > 0 else 1.0
+
+    # Sensible default bounds based on unit & signedness (overridden by YAML or 0x502B descriptor at runtime)
+    is_signed = dtype in ("I8", "I16", "I32")
+    if unit_raw == "%":
+        min_val, max_val = (0.0, 100.0)
+    elif unit_raw in ("°C", "K"):
+        min_val, max_val = (-30.0 if is_signed else 0.0, 90.0)
+    elif unit_raw == "bar":
+        min_val, max_val = (0.0, 5.0)
+    elif dtype == "U8":
+        min_val, max_val = (0.0, round(254 * gain, 4))
+    elif dtype == "I8":
+        min_val, max_val = (round(-127 * gain, 4), round(127 * gain, 4))
+    elif dtype == "U16":
+        min_val, max_val = (0.0, round(10000 * gain, 4))
+    elif dtype == "I16":
+        min_val, max_val = (round(-3200 * gain, 4), round(10000 * gain, 4))
+    else:
+        min_val, max_val = (0.0 if not is_signed else -10000.0, 100000.0)
+
+    meta: dict[str, Any] = {
+        "min_value": min_val,
+        "max_value": max_val,
+        "step": step,
+        "default_name": base["default_name"],
+        "icon": base.get("icon", "mdi:tune"),
+    }
+    if "unit_of_measurement" in base:
+        meta["unit_of_measurement"] = base["unit_of_measurement"]
+    if "device_class" in base:
+        meta["device_class"] = base["device_class"]
+    return meta

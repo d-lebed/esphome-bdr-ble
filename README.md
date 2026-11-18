@@ -209,6 +209,49 @@ text_sensor:
         name: "Strateo Appliance Sub-Status"
 ```
 
+### 4. Writable Numeric Parameters (`number`)
+
+Supports editing numeric boiler / heat pump parameters (`U8`, `I8`, `U16`, `I16`, `U32`, `I32`, such as DHW setpoints, heating curve slopes, or zone temperature setpoints).
+
+- Automatically populates `unit_of_measurement`, `device_class`, `icon`, `step` (`Gain`), and initial `min_value` / `max_value` from `obd_catalog.json` (`entity_category: config`, default `mode: box`).
+- **Dynamic Boiler Limits from `0x502B`:** When the boiler connects and `0x502B:01..05` (`varApMenuDescriptor`) is read, `bdr_ble` automatically updates each `number` entity's `min_value`, `max_value`, and `step` to the exact hardware limits reported by your boiler.
+- Changing a value in Home Assistant sends a **Confirmed Write Request (`Function = 0x04`)** over BLE and immediately reads back the parameter upon receiving `Write Pos Ack (`0x05`)` (or reverts on `Write Neg Ack (`0x06`)`).
+
+```yaml
+number:
+  - platform: bdr_ble
+    update_interval: 30s
+    numbers:
+      - parameter: DP070
+        name: "DHW Comfort Setpoint"
+        min_value: 35
+        max_value: 65
+        step: 0.5
+        mode: box
+      - parameter: CP010
+        name: "Zone Flow Temperature Setpoint"
+```
+
+---
+
+### 5. Writable Enum Parameters (`select`)
+
+Supports editing enumerated boiler / heat pump parameters (`MetaDataPointEnum`, such as operating modes, DHW modes, or schedule selections).
+
+- Automatically populates the dropdown `options:` list at compile time from the parameter's `Enum` definition in `obd_catalog.json` (`entity_category: config`, default icon `mdi:tune-variant`).
+- Selecting a new option in Home Assistant translates the option label back to its raw integer enum code, sends a **Confirmed Write Request (`Function = 0x04`)**, and reads back the confirmed value from the boiler.
+
+```yaml
+select:
+  - platform: bdr_ble
+    update_interval: 30s
+    selects:
+      - parameter: DP200
+        name: "DHW Operating Mode"
+      - parameter: CP320
+        name: "Heating Zone Operating Mode"
+```
+
 ---
 
 ## Step-by-Step Workflow: How to Discover & Configure Supported Sensors for Your Boiler
@@ -290,7 +333,7 @@ This project is an **independent reverse-engineering effort** created solely for
   - **Directive 2009/24/EC** of the European Parliament and of the Council on the legal protection of computer programs (specifically the right to observe, study, and reverse-engineer protocols for the purpose of achieving interoperability);
   - **Article 75** of the Polish Act on Copyright and Related Rights (*Ustawa o prawie autorskim i prawach pokrewnych*);
   - **CJEU Case C-406/10 (*SAS Institute Inc. v. World Programming Ltd*)**, establishing that neither the functionality of a computer program nor the communication protocol / data format used by it constitutes a form of expression protected by copyright.
-- **Original Code & Read-Only Operation:** All C++, Python, and HTML/JavaScript source code in this repository is an original implementation written for ESPHome and contains no proprietary binary code from BDR Thermea. The component operates in **strictly read-only mode** (after the mandatory session unlock handshake, it only sends `ReadRequest 0x00` and `GetListRequest 0x08` parameter reads and never writes or modifies boiler configuration parameters).
+- **Original Code:** All C++, Python, and HTML/JavaScript source code in this repository is an original implementation written for ESPHome and contains no proprietary binary code from BDR Thermea.
 - **Use at Your Own Risk:** This software is provided **"AS IS"**, without warranty of any kind. Connecting third-party software or hardware to your heating appliance is done **entirely at your own risk**. The author assumes no responsibility or liability for any hardware damage, malfunction of the heating or hot water system, property damage, or **loss of manufacturer warranty**.
 
 ## License

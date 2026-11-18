@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Parameter Writing Support (`number` & `select` platforms):**
+  - Added `number` platform (`components/bdr_ble/number/`) for writable numeric parameters (`U8`, `I8`, `U16`, `I16`, `U32`, `I32`) with automatic unit/step/range inference and dynamic `min_value`/`max_value`/`step` updates from the boiler's `0x502B:01..05` menu descriptors.
+  - Added `select` platform (`components/bdr_ble/select/`) for writable `Enum` parameters with compile-time option population from `obd_catalog.json`.
+  - Implemented `WriteConfirmedRequest` (`Function = 0x04`) queue in `BdrBleComponent` with automatic read-back on `WritePosAck` (`Function = 0x05`) and state revert on `WriteNegAck` (`Function = 0x06`).
+  - Updated `docs/configurator.html` to default writable `Parameter` datapoints to `number (rw)` / `select (rw)` and generate `number:` and `select:` YAML blocks.
+
 ### Fixed
 - **Interactive YAML Constructor (`docs/configurator.html`):**
   - Display all `Enum` values and `FunctionGroup` badges in full without truncating after 5 items (`...`).

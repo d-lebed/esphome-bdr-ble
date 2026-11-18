@@ -6,9 +6,9 @@ This repository contains the **`bdr_ble`** ESPHome external component for **BDR 
 
 ## 1. Mandatory Rules for Every Change
 
-1. **Strictly Read-Only Boiler Operations (Safety Critical):**
-   - Outside of the mandatory session unlock handshake (GATT Service 3 challenge-response and CAN-BUS `RUB v2.01` `Function = 0x02` unlock), `bdr_ble` **must only send read requests** (`Function = 0x00` Single Read and `Function = 0x08` `GetListRequest`).
-   - **Never** send parameter write commands (`Function = 0x01`), factory reset commands, or firmware update frames to the boiler unless explicitly requested and verified by the user.
+1. **Safe Parameter Operations:**
+   - Outside of the session unlock handshake, `bdr_ble` only sends `ReadRequest` (`Function = 0x00`), `GetListRequest` (`Function = 0x08`), and user-initiated `WriteConfirmedRequest` (`Function = 0x04` from `number` / `select` entities).
+   - Never send factory reset commands (`0x4000`) or firmware update frames (`Function = 0x0A..0x13`).
 2. **Always Update `CHANGELOG.md`:**
    - **Every** user-visible, protocol, architectural, bug-fix, or configuration change **must** include a corresponding entry under the `## [Unreleased]` section of [`CHANGELOG.md`](./CHANGELOG.md) (`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`) in the same commit or branch before finishing the task.
    - When cutting a new Git tag / GitHub Release (`vX.Y.Z`), move the contents of `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD`, update comparison links at the bottom of `CHANGELOG.md`, and leave an empty `## [Unreleased]` section at the top.

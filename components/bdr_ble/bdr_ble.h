@@ -12,16 +12,25 @@
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
+#ifdef USE_NUMBER
+#include "esphome/components/number/number.h"
+#endif
+#ifdef USE_SELECT
+#include "esphome/components/select/select.h"
+#endif
 
 #include <esp_gattc_api.h>
 #include <esp_gap_ble_api.h>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
 
 namespace esphome {
 namespace bdr_ble {
+
+class BdrBleComponent;
 
 enum BdrDataType : uint8_t {
   BDR_TYPE_U8 = 0,
@@ -36,6 +45,65 @@ enum BdrDataType : uint8_t {
   BDR_TYPE_TIME_OF_DAY = 9,
 };
 
+#ifdef USE_NUMBER
+class BdrBleNumber : public number::Number {
+ public:
+  void set_parent(BdrBleComponent *parent) { this->parent_ = parent; }
+  void set_datapoint_meta(uint8_t node_id, uint16_t index, uint8_t sub_index,
+                          BdrDataType data_type, float scale) {
+    this->node_id_ = node_id;
+    this->index_ = index;
+    this->sub_index_ = sub_index;
+    this->data_type_ = data_type;
+    this->scale_ = scale;
+  }
+
+ protected:
+  void control(float value) override;
+
+  BdrBleComponent *parent_{nullptr};
+  uint8_t node_id_{0x01};
+  uint16_t index_{0};
+  uint8_t sub_index_{0};
+  BdrDataType data_type_{BDR_TYPE_U16};
+  float scale_{1.0f};
+};
+#endif
+
+#ifdef USE_SELECT
+class BdrBleSelect : public select::Select {
+ public:
+  void set_parent(BdrBleComponent *parent) { this->parent_ = parent; }
+  void set_datapoint_meta(uint8_t node_id, uint16_t index, uint8_t sub_index) {
+    this->node_id_ = node_id;
+    this->index_ = index;
+    this->sub_index_ = sub_index;
+  }
+  void add_enum_option(int raw_value, const char *label) {
+    this->val_to_label_[raw_value] = label;
+    this->label_to_val_[label] = raw_value;
+  }
+  void publish_from_raw(int raw_value);
+
+ protected:
+  void control(const std::string &value) override;
+
+  BdrBleComponent *parent_{nullptr};
+  uint8_t node_id_{0x01};
+  uint16_t index_{0};
+  uint8_t sub_index_{0};
+  std::map<int, std::string> val_to_label_;
+  std::map<std::string, int> label_to_val_;
+};
+#endif
+
+struct PendingWrite {
+  uint8_t node_id{0x01};
+  uint16_t index{0};
+  uint8_t sub_index{0};
+  std::vector<uint8_t> data;
+};
+
 struct DatapointRegistration {
   uint8_t node_id{0x01};
   uint16_t index{0};
@@ -48,6 +116,12 @@ struct DatapointRegistration {
 #endif
 #ifdef USE_TEXT_SENSOR
   std::vector<text_sensor::TextSensor *> text_sensors;
+#endif
+#ifdef USE_NUMBER
+  std::vector<BdrBleNumber *> numbers;
+#endif
+#ifdef USE_SELECT
+  std::vector<BdrBleSelect *> selects;
 #endif
 };
 
@@ -86,6 +160,20 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                                  const char *description);
 #endif
 
+#ifdef USE_NUMBER
+  void register_number(BdrBleNumber *num, uint16_t index, uint8_t sub_index,
+                       uint8_t data_type, float scale, uint32_t interval_ms,
+                       uint8_t node_id = 0xFF);
+#endif
+
+#ifdef USE_SELECT
+  void register_select(BdrBleSelect *sel, uint16_t index, uint8_t sub_index,
+                       uint32_t interval_ms, uint8_t node_id = 0xFF);
+#endif
+
+  void queue_write_datapoint(uint8_t node_id, uint16_t index, uint8_t sub_index,
+                             const std::vector<uint8_t> &data);
+
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                            esp_ble_gattc_cb_param_t *param) override;
   void gap_event_handler(esp_gap_ble_cb_event_t event,
@@ -120,6 +208,8 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void send_zero_length_write_(uint16_t char_handle);
   void send_direct_channel_(const uint8_t *payload, size_t len);
   void send_read_param_(uint8_t node_id, uint16_t index, uint8_t sub_index);
+  void send_write_param_(uint8_t node_id, uint16_t index, uint8_t sub_index,
+                         const uint8_t *data, size_t data_len);
   void send_get_list_batch_(const PollGroup &grp,
                             const std::vector<size_t> &item_indices,
                             bool use_v200_header);
@@ -150,6 +240,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   std::vector<uint32_t> discovered_datapoints_;
 
   std::vector<PollGroup> poll_groups_;
+  std::deque<PendingWrite> write_queue_;
   int active_group_idx_{-1};
   size_t active_item_idx_{0};
   bool waiting_response_{false};

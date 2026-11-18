@@ -129,6 +129,15 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
     STATE_RUB_WAIT_AUTH_ACK,
     STATE_READING_SNAPSHOT,
     STATE_READY,
+    STATE_AUTH_FAILED,
+  };
+
+  enum InFlightType : uint8_t {
+    IN_FLIGHT_NONE = 0,
+    IN_FLIGHT_SNAPSHOT,
+    IN_FLIGHT_READ,
+    IN_FLIGHT_WRITE,
+    IN_FLIGHT_GET_LIST,
   };
 
   DatapointRegistration &get_or_create_datapoint_(uint32_t interval_ms, uint8_t node_id,
@@ -169,9 +178,11 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t auth_level_{4};
   uint32_t pin_{0};
   bool has_pin_{false};
+  bool pairing_failed_{false};
   uint32_t last_action_ms_{0};
   uint8_t cccd_step_{0};
   uint8_t retry_count_{0};
+  uint8_t consecutive_timeouts_{0};
   uint8_t snapshot_sub_idx_{1};
   std::vector<uint32_t> discovered_datapoints_;
 
@@ -179,13 +190,17 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   std::deque<PendingWrite> write_queue_;
   int active_group_idx_{-1};
   size_t active_item_idx_{0};
-  bool waiting_response_{false};
-  bool waiting_for_get_list_{false};
+  InFlightType in_flight_type_{IN_FLIGHT_NONE};
+  uint8_t in_flight_node_{0x01};
+  uint16_t in_flight_index_{0};
+  uint8_t in_flight_sub_{0};
   uint32_t last_req_ms_{0};
-  uint8_t get_list_stage_{0};  // 0=try 02 01..03, 1=try 02 00..00, 2=confirmed, 3=fallback to pipelined 0x00
+  uint8_t get_list_stage_{0};  // 0=try 02 01..03, 1=try 02 00..00, 2=confirmed, 3=fallback to single 0x00
   uint16_t negotiated_mtu_{23};
 
   std::vector<uint8_t> rx_reassembly_buf_;
+  uint8_t expected_rx_seg_{0};
+  uint32_t last_rx_seg_ms_{0};
 
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *status_text_{nullptr};

@@ -49,6 +49,20 @@ inline constexpr uint8_t RUB_FUNC_AUTH_ACK = 0x03;
 inline constexpr uint16_t INDEX_AP_MENU_DESCRIPTOR = 0x502B;
 inline constexpr uint8_t SNAPSHOT_MAX_SUB_INDEX = 15;
 
+// Timeouts aligned with boiler's 1000 ms CAN SDO timeout
+inline constexpr uint32_t HANDSHAKE_TIMEOUT_MS = 3000;
+inline constexpr uint32_t REQUEST_TIMEOUT_MS = 1500;
+inline constexpr uint32_t AUTH_COOLDOWN_MS = 30000;
+inline constexpr uint32_t MIN_TX_INTERVAL_MS = 60;
+inline constexpr size_t MAX_WRITE_QUEUE_SIZE = 16;
+inline constexpr uint8_t MAX_CONSECUTIVE_TIMEOUTS = 10;
+
+// SDO Abort codes that indicate a permanently unsupported object/sub-index
+inline constexpr uint32_t SDO_ABORT_UNSUPPORTED_ACCESS = 0x06010000UL;
+inline constexpr uint32_t SDO_ABORT_WRITE_ONLY = 0x06010001UL;
+inline constexpr uint32_t SDO_ABORT_OBJECT_NOT_EXIST = 0x06020000UL;
+inline constexpr uint32_t SDO_ABORT_SUBINDEX_NOT_EXIST = 0x06090011UL;
+
 enum BdrDataType : uint8_t {
   BDR_TYPE_U8 = 0,
   BDR_TYPE_I8 = 1,

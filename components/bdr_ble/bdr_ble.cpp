@@ -124,6 +124,11 @@ void BdrBleComponent::register_select(select::Select *sel, uint16_t index,
 void BdrBleComponent::queue_write_datapoint(uint8_t node_id, uint16_t index,
                                             uint8_t sub_index,
                                             const std::vector<uint8_t> &data) {
+  if (this->state_ != STATE_READY) {
+    ESP_LOGW(TAG, "Cannot write 0x%04X:%02X: BLE session not ready (state=%u)",
+             index, sub_index, static_cast<unsigned>(this->state_));
+    return;
+  }
   for (auto &w : this->write_queue_) {
     if (w.node_id == node_id && w.index == index && w.sub_index == sub_index) {
       w.data = data;
@@ -131,6 +136,11 @@ void BdrBleComponent::queue_write_datapoint(uint8_t node_id, uint16_t index,
                sub_index, data.size());
       return;
     }
+  }
+  if (this->write_queue_.size() >= MAX_WRITE_QUEUE_SIZE) {
+    ESP_LOGW(TAG, "Write queue full (%zu items); dropping oldest pending write",
+             this->write_queue_.size());
+    this->write_queue_.pop_front();
   }
   PendingWrite pw;
   pw.node_id = node_id;
@@ -300,15 +310,18 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
     case ESP_GATTC_OPEN_EVT:
       if (param->open.status == ESP_GATT_OK) {
         this->state_ = STATE_CONNECTED_WAIT_SEC;
+        this->pairing_failed_ = false;
         this->cccd_step_ = 0;
         this->retry_count_ = 0;
+        this->consecutive_timeouts_ = 0;
         this->active_group_idx_ = -1;
-        this->waiting_response_ = false;
-        this->waiting_for_get_list_ = false;
+        this->in_flight_type_ = IN_FLIGHT_NONE;
         this->get_list_stage_ = 0;
         this->negotiated_mtu_ = 23;
         this->rx_reassembly_buf_.clear();
+        this->expected_rx_seg_ = 0;
         this->discovered_datapoints_.clear();
+        this->write_queue_.clear();
         for (auto &grp : this->poll_groups_) {
           for (auto &dp : grp.items) {
             dp.unsupported = false;
@@ -319,6 +332,9 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         if (this->parent() != nullptr) {
           this->parent()->pair();
         }
+      } else {
+        ESP_LOGW(TAG, "GATT open failed: status=%d", param->open.status);
+        this->publish_status_("Connection Failed");
       }
       break;
 
@@ -332,9 +348,10 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
     case ESP_GATTC_DISCONNECT_EVT:
       this->state_ = STATE_DISCONNECTED;
       this->active_group_idx_ = -1;
-      this->waiting_response_ = false;
-      this->waiting_for_get_list_ = false;
+      this->in_flight_type_ = IN_FLIGHT_NONE;
       this->rx_reassembly_buf_.clear();
+      this->expected_rx_seg_ = 0;
+      this->write_queue_.clear();
       this->publish_status_("Disconnected");
       break;
 
@@ -376,8 +393,14 @@ void BdrBleComponent::gap_event_handler(esp_gap_ble_cb_event_t event,
     return;
   }
   if (event == ESP_GAP_BLE_AUTH_CMPL_EVT) {
+    if (this->parent() == nullptr ||
+        std::memcmp(param->ble_security.auth_cmpl.bd_addr,
+                    this->parent()->get_remote_bda(), 6) != 0) {
+      return;
+    }
     if (param->ble_security.auth_cmpl.success) {
       ESP_LOGI(TAG, "BLE link encrypted; subscribing to GATT notifications");
+      this->pairing_failed_ = false;
       if (this->state_ == STATE_CONNECTED_WAIT_SEC) {
         this->state_ = STATE_SUBSCRIBING;
         this->cccd_step_ = 0;
@@ -386,6 +409,9 @@ void BdrBleComponent::gap_event_handler(esp_gap_ble_cb_event_t event,
     } else {
       ESP_LOGW(TAG, "BLE pairing/encryption failed: reason=0x%02X",
                param->ble_security.auth_cmpl.fail_reason);
+      this->pairing_failed_ = true;
+      this->state_ = STATE_AUTH_FAILED;
+      this->last_action_ms_ = millis();
       this->publish_status_("BLE Pairing Failed");
     }
   }
@@ -397,8 +423,20 @@ void BdrBleComponent::loop() {
   }
   const uint32_t now = millis();
 
+  if (this->state_ == STATE_AUTH_FAILED) {
+    if (!this->pairing_failed_ && (now - this->last_action_ms_ >= AUTH_COOLDOWN_MS)) {
+      ESP_LOGI(TAG, "Auth cooldown elapsed; retrying BLE unlock");
+      this->publish_status_("Unlocking BLE (Service 3)");
+      this->send_zero_length_write_(HANDLE_SVC3_TRIG);
+      this->state_ = STATE_SVC3_WAIT_CHALLENGE;
+      this->retry_count_ = 0;
+      this->last_action_ms_ = now;
+    }
+    return;
+  }
+
   if (this->state_ == STATE_CONNECTED_WAIT_SEC) {
-    if (now - this->last_action_ms_ > 10000) {
+    if (!this->pairing_failed_ && (now - this->last_action_ms_ > 10000)) {
       this->state_ = STATE_SUBSCRIBING;
       this->cccd_step_ = 0;
       this->last_action_ms_ = now;
@@ -427,11 +465,13 @@ void BdrBleComponent::loop() {
     return;
   }
 
-  if (this->state_ == STATE_SVC3_WAIT_CHALLENGE) {
-    if (now - this->last_action_ms_ > 3000) {
+  if (this->state_ == STATE_SVC3_WAIT_CHALLENGE ||
+      this->state_ == STATE_SVC3_WAIT_RESULT) {
+    if (now - this->last_action_ms_ > HANDSHAKE_TIMEOUT_MS) {
       this->last_action_ms_ = now;
       if (this->retry_count_ < 3) {
         this->retry_count_++;
+        this->state_ = STATE_SVC3_WAIT_CHALLENGE;
         this->send_zero_length_write_(HANDLE_SVC3_TRIG);
       } else {
         this->publish_status_("Unlocking CAN-BUS (RUB v2.01)");
@@ -445,29 +485,42 @@ void BdrBleComponent::loop() {
     return;
   }
 
-  if (this->state_ == STATE_RUB_WAIT_CHALLENGE) {
-    if (now - this->last_action_ms_ > 3000 && this->retry_count_ < 3) {
+  if (this->state_ == STATE_RUB_WAIT_CHALLENGE ||
+      this->state_ == STATE_RUB_WAIT_AUTH_ACK) {
+    if (now - this->last_action_ms_ > HANDSHAKE_TIMEOUT_MS) {
       this->last_action_ms_ = now;
-      this->retry_count_++;
-      const uint8_t rub_chal_req[6] = {
-          0x02, 0x01, 0x00, MSG_TYPE_RUB_AUTH, RUB_FUNC_CHALLENGE_REQ, 0x03};
-      this->send_direct_channel_(rub_chal_req, sizeof(rub_chal_req));
+      if (this->retry_count_ < 3) {
+        this->retry_count_++;
+        this->state_ = STATE_RUB_WAIT_CHALLENGE;
+        const uint8_t rub_chal_req[6] = {
+            0x02, 0x01, 0x00, MSG_TYPE_RUB_AUTH, RUB_FUNC_CHALLENGE_REQ, 0x03};
+        this->send_direct_channel_(rub_chal_req, sizeof(rub_chal_req));
+      } else {
+        ESP_LOGW(TAG, "RUB v2.01 authentication timed out after 3 retries");
+        this->publish_status_("CAN-BUS Auth Timeout");
+        this->state_ = STATE_AUTH_FAILED;
+      }
     }
     return;
   }
 
   if (this->state_ == STATE_READING_SNAPSHOT) {
-    if (this->waiting_response_ && (now - this->last_req_ms_ >= 1500)) {
+    if (this->in_flight_type_ != IN_FLIGHT_NONE &&
+        (now - this->last_req_ms_ >= REQUEST_TIMEOUT_MS)) {
       ESP_LOGD(TAG, "Snapshot 0x502B:%02X timed out; advancing",
                this->snapshot_sub_idx_);
-      this->waiting_response_ = false;
+      this->in_flight_type_ = IN_FLIGHT_NONE;
       this->snapshot_sub_idx_++;
     }
-    if (!this->waiting_response_ && (now - this->last_action_ms_ >= 60)) {
+    if (this->in_flight_type_ == IN_FLIGHT_NONE &&
+        (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
       if (this->snapshot_sub_idx_ <= SNAPSHOT_MAX_SUB_INDEX) {
         this->send_read_param_(this->default_node_id_, INDEX_AP_MENU_DESCRIPTOR,
                                this->snapshot_sub_idx_);
-        this->waiting_response_ = true;
+        this->in_flight_type_ = IN_FLIGHT_SNAPSHOT;
+        this->in_flight_node_ = this->default_node_id_;
+        this->in_flight_index_ = INDEX_AP_MENU_DESCRIPTOR;
+        this->in_flight_sub_ = this->snapshot_sub_idx_;
         this->last_req_ms_ = now;
         this->last_action_ms_ = now;
       } else {
@@ -475,7 +528,8 @@ void BdrBleComponent::loop() {
         this->publish_status_("Ready");
         this->state_ = STATE_READY;
         this->active_group_idx_ = -1;
-        this->waiting_response_ = false;
+        this->in_flight_type_ = IN_FLIGHT_NONE;
+        this->consecutive_timeouts_ = 0;
         for (auto &grp : this->poll_groups_) {
           grp.last_cycle_start_ms = 0;
         }
@@ -487,34 +541,64 @@ void BdrBleComponent::loop() {
 
   if (this->state_ == STATE_READY) {
     // Check if an active request timed out
-    if (this->waiting_response_ && (now - this->last_req_ms_ >= 800)) {
-      this->waiting_response_ = false;
-      if (this->waiting_for_get_list_ && this->active_group_idx_ >= 0 &&
+    if (this->in_flight_type_ != IN_FLIGHT_NONE &&
+        (now - this->last_req_ms_ >= REQUEST_TIMEOUT_MS)) {
+      InFlightType timed_out_type = this->in_flight_type_;
+      this->in_flight_type_ = IN_FLIGHT_NONE;
+      this->consecutive_timeouts_++;
+
+      if (this->consecutive_timeouts_ >= MAX_CONSECUTIVE_TIMEOUTS) {
+        ESP_LOGW(TAG, "%u consecutive request timeouts; re-authenticating RUB session",
+                 this->consecutive_timeouts_);
+        this->consecutive_timeouts_ = 0;
+        this->publish_status_("Re-authenticating CAN-BUS");
+        const uint8_t rub_chal_req[6] = {
+            0x02, 0x01, 0x00, MSG_TYPE_RUB_AUTH, RUB_FUNC_CHALLENGE_REQ, 0x03};
+        this->send_direct_channel_(rub_chal_req, sizeof(rub_chal_req));
+        this->state_ = STATE_RUB_WAIT_CHALLENGE;
+        this->retry_count_ = 0;
+        this->last_action_ms_ = now;
+        return;
+      }
+
+      if (timed_out_type == IN_FLIGHT_WRITE) {
+        ESP_LOGW(TAG,
+                 "Write confirmation for 0x%04X:%02X timed out; reading back value",
+                 this->in_flight_index_, this->in_flight_sub_);
+        this->send_read_param_(this->in_flight_node_, this->in_flight_index_,
+                               this->in_flight_sub_);
+        this->in_flight_type_ = IN_FLIGHT_READ;
+        this->last_req_ms_ = now;
+        this->last_action_ms_ = now;
+        return;
+      }
+
+      if (timed_out_type == IN_FLIGHT_GET_LIST && this->active_group_idx_ >= 0 &&
           this->get_list_stage_ < 2) {
-        this->waiting_for_get_list_ = false;
         this->get_list_stage_++;
         if (this->get_list_stage_ == 1) {
           ESP_LOGI(TAG, "GetListRequest v2.01 timed out; trying v2.00 header");
           this->active_item_idx_ = 0;
         } else {
           ESP_LOGI(TAG,
-                   "GetListRequest not supported over DirectChannel; using fast pipelined burst polling");
+                   "GetListRequest not supported over DirectChannel; using sequential single-read polling");
           this->get_list_stage_ = 3;
           this->active_item_idx_ = 0;
         }
       }
-      this->waiting_for_get_list_ = false;
     }
 
     // Priority 1: Execute any queued parameter writes immediately
-    if (!this->write_queue_.empty() && !this->waiting_response_ &&
-        (now - this->last_action_ms_ >= 60)) {
+    if (!this->write_queue_.empty() && this->in_flight_type_ == IN_FLIGHT_NONE &&
+        (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
       PendingWrite pw = this->write_queue_.front();
       this->write_queue_.pop_front();
       this->send_write_param_(pw.node_id, pw.index, pw.sub_index,
                               pw.data.data(), pw.data.size());
-      this->waiting_response_ = true;
-      this->waiting_for_get_list_ = false;
+      this->in_flight_type_ = IN_FLIGHT_WRITE;
+      this->in_flight_node_ = pw.node_id;
+      this->in_flight_index_ = pw.index;
+      this->in_flight_sub_ = pw.sub_index;
       this->last_req_ms_ = now;
       this->last_action_ms_ = now;
       return;
@@ -524,8 +608,10 @@ void BdrBleComponent::loop() {
       return;
     }
 
-    // If no group is currently bursting, check if any group's interval is due
+    // If no group is currently bursting, select the most overdue group
     if (this->active_group_idx_ < 0) {
+      int best_group = -1;
+      uint32_t max_overdue = 0;
       for (size_t g = 0; g < this->poll_groups_.size(); g++) {
         auto &grp = this->poll_groups_[g];
         bool has_supported = false;
@@ -535,20 +621,32 @@ void BdrBleComponent::loop() {
             break;
           }
         }
-        if (has_supported &&
-            (grp.last_cycle_start_ms == 0 ||
-             (now - grp.last_cycle_start_ms >= grp.interval_ms))) {
-          this->active_group_idx_ = static_cast<int>(g);
-          this->active_item_idx_ = 0;
-          grp.last_cycle_start_ms = now;
+        if (!has_supported) {
+          continue;
+        }
+        if (grp.last_cycle_start_ms == 0) {
+          best_group = static_cast<int>(g);
           break;
         }
+        uint32_t elapsed = now - grp.last_cycle_start_ms;
+        if (elapsed >= grp.interval_ms) {
+          uint32_t overdue = elapsed - grp.interval_ms;
+          if (best_group < 0 || overdue > max_overdue) {
+            best_group = static_cast<int>(g);
+            max_overdue = overdue;
+          }
+        }
+      }
+      if (best_group >= 0) {
+        this->active_group_idx_ = best_group;
+        this->active_item_idx_ = 0;
+        this->poll_groups_[best_group].last_cycle_start_ms = (now == 0) ? 1 : now;
       }
     }
 
-    // Execute batch GetListRequest or fast pipelined burst for the active group
-    if (this->active_group_idx_ >= 0 && !this->waiting_response_ &&
-        (now - this->last_action_ms_ >= 60)) {
+    // Execute batch GetListRequest or sequential read for the active group
+    if (this->active_group_idx_ >= 0 && this->in_flight_type_ == IN_FLIGHT_NONE &&
+        (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
       auto &grp = this->poll_groups_[this->active_group_idx_];
       while (this->active_item_idx_ < grp.items.size() &&
              grp.items[this->active_item_idx_].unsupported) {
@@ -570,15 +668,16 @@ void BdrBleComponent::loop() {
         if (this->get_list_stage_ <= 2 && batch_indices.size() > 1) {
           bool use_v200 = (this->get_list_stage_ == 1);
           this->send_get_list_batch_(grp, batch_indices, use_v200);
-          this->waiting_response_ = true;
-          this->waiting_for_get_list_ = true;
+          this->in_flight_type_ = IN_FLIGHT_GET_LIST;
           this->last_req_ms_ = now;
           this->last_action_ms_ = now;
         } else if (!batch_indices.empty()) {
           const auto &dp = grp.items[batch_indices[0]];
           this->send_read_param_(dp.node_id, dp.index, dp.sub_index);
-          this->waiting_response_ = true;
-          this->waiting_for_get_list_ = false;
+          this->in_flight_type_ = IN_FLIGHT_READ;
+          this->in_flight_node_ = dp.node_id;
+          this->in_flight_index_ = dp.index;
+          this->in_flight_sub_ = dp.sub_index;
           this->last_req_ms_ = now;
           this->last_action_ms_ = now;
         }

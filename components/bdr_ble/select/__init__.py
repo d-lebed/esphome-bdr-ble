@@ -56,10 +56,19 @@ def _preprocess_select_item(value: Any) -> dict[str, Any]:
     dp = resolve_parameter(cfg[CONF_PARAMETER], sub_override)
     dtype = dp["type"]
     enum_name = dp.get("enum", "")
+    if dtype == "Struct":
+        raise cv.Invalid(
+            f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) is a composite Struct table and cannot be polled as a single entity."
+        )
     if dtype != "Enum" or not enum_name:
         raise cv.Invalid(
             f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) has type '{dtype}' (not an Enum). "
             f"Use 'number:' for numeric parameters instead of 'select:'."
+        )
+    if not dp.get("rw", False):
+        raise cv.Invalid(
+            f"OBD enum datapoint '{cfg[CONF_PARAMETER]}' ({dp['name']}) is read-only ({dp.get('cls', 'Signal')}). "
+            f"Use 'text_sensor:' instead of 'select:'."
         )
 
     enum_map = get_enum_mapping(enum_name)

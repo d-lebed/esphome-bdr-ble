@@ -154,24 +154,63 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
 bool encode_numeric_datapoint(BdrDataType data_type, float scale, float value,
                               std::vector<uint8_t> &out_bytes) {
   out_bytes.clear();
-  float eff_scale = (scale > 0.0f) ? scale : 1.0f;
-  int64_t raw = static_cast<int64_t>(std::llround(value / eff_scale));
+  if (!std::isfinite(value) || !std::isfinite(scale) || scale <= 0.0f) {
+    return false;
+  }
+  int64_t raw = static_cast<int64_t>(std::llround(value / scale));
 
   switch (data_type) {
     case BDR_TYPE_U8:
-    case BDR_TYPE_I8:
     case BDR_TYPE_ENUM:
+      // 0xFF is the BDR invalid/unplugged sentinel for U8
+      if (raw < 0 || raw > 254) {
+        return false;
+      }
+      out_bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
+      return true;
+
+    case BDR_TYPE_I8:
+      // -128 (0x80) is the BDR invalid/unplugged sentinel for I8
+      if (raw < -127 || raw > 127) {
+        return false;
+      }
       out_bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
       return true;
 
     case BDR_TYPE_U16:
+      // 0xFFFF is the BDR invalid/unplugged sentinel for U16
+      if (raw < 0 || raw > 65534) {
+        return false;
+      }
+      out_bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
+      out_bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
+      return true;
+
     case BDR_TYPE_I16:
+      // -32768 (0x8000) is the BDR invalid/unplugged sentinel for I16
+      if (raw < -32767 || raw > 32767) {
+        return false;
+      }
       out_bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
       out_bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
       return true;
 
     case BDR_TYPE_U32:
+      // 0xFFFFFFFF is the BDR invalid/unplugged sentinel for U32
+      if (raw < 0 || raw > 0xFFFFFFFELL) {
+        return false;
+      }
+      out_bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
+      out_bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
+      out_bytes.push_back(static_cast<uint8_t>((raw >> 16) & 0xFF));
+      out_bytes.push_back(static_cast<uint8_t>((raw >> 24) & 0xFF));
+      return true;
+
     case BDR_TYPE_I32:
+      // -2147483648 (0x80000000) is the BDR invalid/unplugged sentinel for I32
+      if (raw < -2147483647LL || raw > 2147483647LL) {
+        return false;
+      }
       out_bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
       out_bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
       out_bytes.push_back(static_cast<uint8_t>((raw >> 16) & 0xFF));

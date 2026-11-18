@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tracked `waiting_for_get_list_` separately from single-item reads/writes so a single write timeout never falsely downgrades `GetListRequest` batch polling.
 
 ### Fixed
+- **State Machine, Transport & Write Hardening:**
+  - Added timeout/retry handling for `STATE_SVC3_WAIT_RESULT` and `STATE_RUB_WAIT_AUTH_ACK`, plus `STATE_AUTH_FAILED` cooldown recovery and a consecutive-timeout session watchdog (`MAX_CONSECUTIVE_TIMEOUTS = 10`).
+  - Added `InFlightType` request/response correlation (`IN_FLIGHT_SNAPSHOT`, `IN_FLIGHT_READ`, `IN_FLIGHT_WRITE`, `IN_FLIGHT_GET_LIST`) and state-guarded BLE notification handlers.
+  - Hardened parameter writes: reject writes when not in `STATE_READY`, cap and clear `write_queue_` on disconnect, validate numeric range and sentinel bounds in `encode_numeric_datapoint()`, enforce `"rw": true` at compile time in `number:` and `select:`, and automatically read back parameter state if a write confirmation times out.
+  - Added `HANDLE_SVC2_CH2` (`27`) Error Management notification handling (automatically re-unlocking on `[3, 0, 0, 4]` `"BLE services locked"`), RX segment sequence and staleness checks, SDO abort code filtering before `Auto-Skip`, and `OctetString` hex formatting for `text_sensor`.
 - **CANopen Array Datapoint Default `SubIndex` (`IsArray="True"`):** Fixed default `sub_index` in `obd_catalog.json` and `docs/configurator.html` for all 916 `IsArray="True"` parameters and signals (such as `DP070`, `DP080`, `DP200`, `CP000`–`CP780`, `CM030`–`CM260`) from `0x00` (which in CANopen is the 1-byte array length header) to `0x01` (Zone 1 / Primary instance, matching the `0x502B` appliance descriptors).
 - **Interactive YAML Constructor (`docs/configurator.html`):**
   - Display all `Enum` values and `FunctionGroup` badges in full without truncating after 5 items (`...`).

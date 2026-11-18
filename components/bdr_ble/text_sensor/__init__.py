@@ -53,6 +53,10 @@ def _preprocess_text_sensor_item(value: Any) -> dict[str, Any]:
 
     dp = resolve_parameter(cfg[CONF_PARAMETER], sub_override)
     dtype = dp["type"]
+    if dtype == "Struct":
+        raise cv.Invalid(
+            f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) is a composite Struct table and cannot be polled as a single entity."
+        )
     if dtype not in TEXT_DATA_TYPES:
         raise cv.Invalid(
             f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) has numeric type '{dtype}'. "

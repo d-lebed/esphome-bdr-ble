@@ -8,6 +8,10 @@ namespace esphome::bdr_ble {
 void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
                                      uint16_t len) {
   if (handle == HANDLE_SVC3_CHAL && len >= 8) {
+    if (this->state_ != STATE_SVC3_WAIT_CHALLENGE &&
+        this->state_ != STATE_SVC3_WAIT_RESULT) {
+      return;
+    }
     this->log_rx_hex_("SVC3[33]", data, len, true);
     uint32_t id1 = static_cast<uint32_t>(data[0]) |
                    (static_cast<uint32_t>(data[1]) << 8) |
@@ -41,6 +45,10 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
   }
 
   if (handle == HANDLE_SVC3_ACK && len >= 1) {
+    if (this->state_ != STATE_SVC3_WAIT_RESULT &&
+        this->state_ != STATE_SVC3_WAIT_CHALLENGE) {
+      return;
+    }
     this->log_rx_hex_("SVC3[38]", data, len, true);
     if (data[0] == 0x01) {
       this->publish_status_("BLE Unlocked -> RUB Auth");
@@ -50,8 +58,27 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
       this->state_ = STATE_RUB_WAIT_CHALLENGE;
       this->retry_count_ = 0;
       this->last_action_ms_ = millis();
-    } else if (this->state_ == STATE_SVC3_WAIT_RESULT) {
+    } else {
       this->publish_status_("Service 3 Auth Rejected");
+      this->state_ = STATE_AUTH_FAILED;
+      this->last_action_ms_ = millis();
+    }
+    return;
+  }
+
+  // Handle 27: BDR Error Management characteristic (de00707b)
+  if (handle == HANDLE_SVC2_CH2 && len >= 4) {
+    ESP_LOGW(TAG, "BLE Error Management notify: [%u, %u, %u, %u]", data[0],
+             data[1], data[2], data[3]);
+    // [3, 0, 0, 4] = "BLE services locked" -> re-trigger Service 3 unlock
+    if (data[0] == 3 && data[1] == 0 && data[2] == 0 && data[3] == 4 &&
+        this->state_ == STATE_READY) {
+      this->publish_status_("BLE Services Locked -> Re-unlocking");
+      this->in_flight_type_ = IN_FLIGHT_NONE;
+      this->send_zero_length_write_(HANDLE_SVC3_TRIG);
+      this->state_ = STATE_SVC3_WAIT_CHALLENGE;
+      this->retry_count_ = 0;
+      this->last_action_ms_ = millis();
     }
     return;
   }
@@ -64,15 +91,35 @@ void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
 void BdrBleComponent::handle_direct_segment_(const uint8_t *data,
                                              uint16_t len) {
   const uint8_t seg = data[0];
+  const uint32_t now = millis();
+
+  // Discard stale partial reassembly buffer if more than 1000 ms old
+  if (!this->rx_reassembly_buf_.empty() &&
+      (now - this->last_rx_seg_ms_ > 1000)) {
+    ESP_LOGW(TAG, "Discarding stale partial RX buffer (%zu bytes)",
+             this->rx_reassembly_buf_.size());
+    this->rx_reassembly_buf_.clear();
+    this->expected_rx_seg_ = 0;
+  }
+
   if (seg == 0x00) {
     this->rx_reassembly_buf_.assign(data + 1, data + len);
+    this->expected_rx_seg_ = 1;
+    this->last_rx_seg_ms_ = now;
     return;
   }
   if (seg < SEGMENT_FINAL) {
-    if (!this->rx_reassembly_buf_.empty() &&
+    if (seg == this->expected_rx_seg_ && !this->rx_reassembly_buf_.empty() &&
         this->rx_reassembly_buf_.size() + (len - 1) <= 2048) {
       this->rx_reassembly_buf_.insert(this->rx_reassembly_buf_.end(), data + 1,
                                       data + len);
+      this->expected_rx_seg_++;
+      this->last_rx_seg_ms_ = now;
+    } else {
+      ESP_LOGW(TAG, "Out-of-order RX segment 0x%02X (expected 0x%02X); resetting",
+               seg, this->expected_rx_seg_);
+      this->rx_reassembly_buf_.clear();
+      this->expected_rx_seg_ = 0;
     }
     return;
   }
@@ -80,7 +127,7 @@ void BdrBleComponent::handle_direct_segment_(const uint8_t *data,
   // seg == 0xFF: final segment (or single-segment frame)
   const uint8_t *frame_ptr = nullptr;
   size_t frame_len = 0;
-  if (!this->rx_reassembly_buf_.empty()) {
+  if (!this->rx_reassembly_buf_.empty() && this->expected_rx_seg_ > 0) {
     this->rx_reassembly_buf_.insert(this->rx_reassembly_buf_.end(), data + 1,
                                     data + len);
     frame_ptr = this->rx_reassembly_buf_.data();
@@ -103,6 +150,7 @@ void BdrBleComponent::handle_direct_segment_(const uint8_t *data,
     }
   }
   this->rx_reassembly_buf_.clear();
+  this->expected_rx_seg_ = 0;
 }
 
 void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
@@ -116,6 +164,10 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
   // RUB v2.01 Challenge Response: 02 01 00 02 01 03 <serial_BE(4)> <chal_BE(4)>
   if (msg_type == MSG_TYPE_RUB_AUTH && func == RUB_FUNC_CHALLENGE_RESP &&
       len >= 14) {
+    if (this->state_ != STATE_RUB_WAIT_CHALLENGE &&
+        this->state_ != STATE_RUB_WAIT_AUTH_ACK) {
+      return;
+    }
     this->log_rx_hex_("RUB_CHAL", payload, len, true);
     uint32_t srv_serial = (static_cast<uint32_t>(payload[6]) << 24) |
                           (static_cast<uint32_t>(payload[7]) << 16) |
@@ -153,6 +205,10 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
 
   // RUB v2.01 Auth Ack: 02 01 00 02 03 03 FF <level> ...
   if (msg_type == MSG_TYPE_RUB_AUTH && func == RUB_FUNC_AUTH_ACK && len >= 8) {
+    if (this->state_ != STATE_RUB_WAIT_AUTH_ACK &&
+        this->state_ != STATE_RUB_WAIT_CHALLENGE) {
+      return;
+    }
     this->log_rx_hex_("RUB_ACK", payload, len, true);
     uint8_t granted = payload[7];
     if (granted > 0) {
@@ -163,23 +219,31 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
       this->state_ = STATE_READING_SNAPSHOT;
       this->snapshot_sub_idx_ = 1;
       this->discovered_datapoints_.clear();
-      this->waiting_response_ = false;
-      this->waiting_for_get_list_ = false;
+      this->in_flight_type_ = IN_FLIGHT_NONE;
+      this->consecutive_timeouts_ = 0;
       this->last_action_ms_ = millis();
     } else {
       this->publish_status_("CAN-BUS Auth Rejected");
+      this->state_ = STATE_AUTH_FAILED;
+      this->last_action_ms_ = millis();
     }
     return;
   }
 
   // Single Read Positive Ack: 02 01 00 00 01 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx> <Data...>
   if (msg_type == MSG_TYPE_SDO && func == FUNC_READ_POS_ACK && len >= 10) {
-    this->waiting_response_ = false;
-    this->waiting_for_get_list_ = false;
     uint8_t node_id = payload[6];
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
+    if ((this->in_flight_type_ == IN_FLIGHT_READ ||
+         this->in_flight_type_ == IN_FLIGHT_SNAPSHOT) &&
+        this->in_flight_node_ == node_id &&
+        this->in_flight_index_ == index &&
+        this->in_flight_sub_ == sub_index) {
+      this->in_flight_type_ = IN_FLIGHT_NONE;
+      this->consecutive_timeouts_ = 0;
+    }
     this->handle_single_read_ack_(node_id, index, sub_index, payload + 10,
                                   len - 10);
     return;
@@ -187,37 +251,62 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
 
   // Single Read Negative Ack (SDO Abort): 02 01 00 00 02 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx> <AbortCode(4)>
   if (msg_type == MSG_TYPE_SDO && func == FUNC_READ_NEG_ACK && len >= 10) {
-    this->waiting_response_ = false;
-    this->waiting_for_get_list_ = false;
     uint8_t node_id = payload[6];
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
+    if ((this->in_flight_type_ == IN_FLIGHT_READ ||
+         this->in_flight_type_ == IN_FLIGHT_SNAPSHOT) &&
+        this->in_flight_node_ == node_id &&
+        this->in_flight_index_ == index &&
+        this->in_flight_sub_ == sub_index) {
+      this->in_flight_type_ = IN_FLIGHT_NONE;
+      this->consecutive_timeouts_ = 0;
+    }
+    uint32_t abort_code = 0;
+    if (len >= 14) {
+      abort_code = static_cast<uint32_t>(payload[10]) |
+                   (static_cast<uint32_t>(payload[11]) << 8) |
+                   (static_cast<uint32_t>(payload[12]) << 16) |
+                   (static_cast<uint32_t>(payload[13]) << 24);
+    }
     if (index == INDEX_AP_MENU_DESCRIPTOR) {
       ESP_LOGD(TAG, "Snapshot 0x502B:%02X -> empty/NACK", sub_index);
       if (this->state_ == STATE_READING_SNAPSHOT &&
           sub_index == this->snapshot_sub_idx_) {
         this->snapshot_sub_idx_++;
       }
-    } else {
+    } else if (abort_code == 0 ||
+               abort_code == SDO_ABORT_OBJECT_NOT_EXIST ||
+               abort_code == SDO_ABORT_SUBINDEX_NOT_EXIST ||
+               abort_code == SDO_ABORT_UNSUPPORTED_ACCESS ||
+               abort_code == SDO_ABORT_WRITE_ONLY) {
       this->mark_datapoint_unsupported_(node_id, index, sub_index,
                                         FUNC_READ_NEG_ACK);
+    } else {
+      ESP_LOGW(TAG, "Transient SDO read abort on 0x%04X:%02X: 0x%08X", index,
+               sub_index, static_cast<unsigned>(abort_code));
     }
     return;
   }
 
   // Write Confirmed Positive Ack: 02 01 00 00 05 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx>
   if (msg_type == MSG_TYPE_SDO && func == FUNC_WRITE_POS_ACK && len >= 10) {
-    this->waiting_response_ = false;
-    this->waiting_for_get_list_ = false;
+    if (this->in_flight_type_ != IN_FLIGHT_WRITE) {
+      return;
+    }
     uint8_t node_id = payload[6];
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
+    this->consecutive_timeouts_ = 0;
     ESP_LOGI(TAG, "Write ACK for 0x%04X:%02X; reading back value", index,
              sub_index);
     this->send_read_param_(node_id, index, sub_index);
-    this->waiting_response_ = true;
+    this->in_flight_type_ = IN_FLIGHT_READ;
+    this->in_flight_node_ = node_id;
+    this->in_flight_index_ = index;
+    this->in_flight_sub_ = sub_index;
     this->last_req_ms_ = millis();
     this->last_action_ms_ = this->last_req_ms_;
     return;
@@ -225,8 +314,9 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
 
   // Write Confirmed Negative Ack (SDO Abort): 02 01 00 00 06 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx> <AbortCode(4)>
   if (msg_type == MSG_TYPE_SDO && func == FUNC_WRITE_NEG_ACK && len >= 10) {
-    this->waiting_response_ = false;
-    this->waiting_for_get_list_ = false;
+    if (this->in_flight_type_ != IN_FLIGHT_WRITE) {
+      return;
+    }
     uint8_t node_id = payload[6];
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
@@ -238,11 +328,15 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
                    (static_cast<uint32_t>(payload[12]) << 16) |
                    (static_cast<uint32_t>(payload[13]) << 24);
     }
+    this->consecutive_timeouts_ = 0;
     ESP_LOGW(TAG,
              "Write NACK for 0x%04X:%02X (SDO abort=0x%08X); reverting state",
              index, sub_index, static_cast<unsigned>(abort_code));
     this->send_read_param_(node_id, index, sub_index);
-    this->waiting_response_ = true;
+    this->in_flight_type_ = IN_FLIGHT_READ;
+    this->in_flight_node_ = node_id;
+    this->in_flight_index_ = index;
+    this->in_flight_sub_ = sub_index;
     this->last_req_ms_ = millis();
     this->last_action_ms_ = this->last_req_ms_;
     return;
@@ -250,9 +344,11 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
 
   // Batch GetListResponse: 02 xx 00 00 09 xx <Count> <Items...>
   if (msg_type == MSG_TYPE_SDO && func == FUNC_GET_LIST_RESP && len >= 7) {
-    this->waiting_response_ = false;
-    this->waiting_for_get_list_ = false;
-    this->get_list_stage_ = 2;  // Confirmed working!
+    if (this->in_flight_type_ == IN_FLIGHT_GET_LIST) {
+      this->in_flight_type_ = IN_FLIGHT_NONE;
+      this->consecutive_timeouts_ = 0;
+      this->get_list_stage_ = 2;  // Confirmed working!
+    }
     this->handle_get_list_response_(payload, len);
   }
 }
@@ -375,8 +471,8 @@ void BdrBleComponent::handle_snapshot_descriptor_(uint8_t sub_index,
     if (raw_min_u != 0xFFFFFFFFUL && raw_max_u != 0xFFFFFFFFUL) {
       for (auto &grp : this->poll_groups_) {
         for (auto &dp : grp.items) {
-          if (dp.index == dp_idx && dp.sub_index == dp_sub &&
-              !dp.numbers.empty()) {
+          if (dp.node_id == this->default_node_id_ && dp.index == dp_idx &&
+              dp.sub_index == dp_sub && !dp.numbers.empty()) {
             bool is_signed = (dp.data_type == BDR_TYPE_I8 ||
                               dp.data_type == BDR_TYPE_I16 ||
                               dp.data_type == BDR_TYPE_I32);
@@ -524,6 +620,15 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
             slen++;
           }
           text_val.assign(reinterpret_cast<const char *>(data), slen);
+        } else if (dp.data_type == BDR_TYPE_OCTET_STRING) {
+          char hbuf[96];
+          int hpos = 0;
+          for (size_t b = 0;
+               b < data_len && hpos < static_cast<int>(sizeof(hbuf)) - 4; b++) {
+            hpos += snprintf(hbuf + hpos, sizeof(hbuf) - hpos, "%s%02X",
+                             (b > 0) ? " " : "", data[b]);
+          }
+          text_val = hbuf;
         } else if (dp.data_type == BDR_TYPE_TIME_OF_DAY && data_len >= 2) {
           char tbuf[16];
           snprintf(tbuf, sizeof(tbuf), "%02u:%02u", data[0], data[1]);

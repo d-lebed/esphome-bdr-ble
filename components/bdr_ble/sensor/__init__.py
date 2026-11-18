@@ -58,6 +58,10 @@ def _preprocess_sensor_item(value: Any) -> dict[str, Any]:
 
     dp = resolve_parameter(cfg[CONF_PARAMETER], sub_override)
     dtype = dp["type"]
+    if dtype == "Struct":
+        raise cv.Invalid(
+            f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) is a composite Struct table and cannot be polled as a single entity."
+        )
     if dtype not in NUMERIC_DATA_TYPES:
         raise cv.Invalid(
             f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) has non-numeric type '{dtype}'. "
@@ -94,7 +98,7 @@ _SINGLE_SENSOR_SCHEMA = cv.All(
             cv.Required(CONF_PARAMETER): cv.string,
             cv.Optional(CONF_SUB_INDEX): cv.int_range(min=0, max=255),
             cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
-            cv.Optional(CONF_SCALE): cv.float_,
+            cv.Optional(CONF_SCALE): cv.positive_float,
             cv.Optional(
                 CONF_UPDATE_INTERVAL, default="30s"
             ): cv.positive_time_period_milliseconds,
@@ -113,7 +117,7 @@ _GROUP_SENSOR_ITEM_SCHEMA = cv.All(
             cv.Required(CONF_PARAMETER): cv.string,
             cv.Optional(CONF_SUB_INDEX): cv.int_range(min=0, max=255),
             cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
-            cv.Optional(CONF_SCALE): cv.float_,
+            cv.Optional(CONF_SCALE): cv.positive_float,
             cv.Optional(CONF_UPDATE_INTERVAL): cv.positive_time_period_milliseconds,
             cv.Required(CONF_RESOLVED_INDEX): cv.int_,
             cv.Required(CONF_RESOLVED_SUB): cv.int_,

@@ -68,10 +68,19 @@ def _preprocess_number_item(value: Any) -> dict[str, Any]:
 
     dp = resolve_parameter(cfg[CONF_PARAMETER], sub_override)
     dtype = dp["type"]
+    if dtype == "Struct":
+        raise cv.Invalid(
+            f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) is a composite Struct table and cannot be polled as a single entity."
+        )
     if dtype not in NUMERIC_DATA_TYPES:
         raise cv.Invalid(
             f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) has non-numeric type '{dtype}'. "
             f"Only numeric parameters can be used with 'number:'."
+        )
+    if not dp.get("rw", False):
+        raise cv.Invalid(
+            f"OBD datapoint '{cfg[CONF_PARAMETER]}' ({dp['name']}) is read-only ({dp.get('cls', 'Signal')}). "
+            f"Use 'sensor:' instead of 'number:'."
         )
 
     meta = infer_number_metadata(dp)
@@ -117,7 +126,7 @@ _NUMBER_ITEM_BASE = number.number_schema(
         cv.Required(CONF_PARAMETER): cv.string,
         cv.Optional(CONF_SUB_INDEX): cv.int_range(min=0, max=255),
         cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
-        cv.Optional(CONF_SCALE): cv.float_,
+        cv.Optional(CONF_SCALE): cv.positive_float,
         cv.Required(CONF_MIN_VALUE): cv.float_,
         cv.Required(CONF_MAX_VALUE): cv.float_,
         cv.Required(CONF_STEP): cv.positive_float,

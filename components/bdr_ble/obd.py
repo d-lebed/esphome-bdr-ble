@@ -186,7 +186,7 @@ def infer_sensor_metadata(dp: dict[str, Any]) -> dict[str, Any]:
 
     unit_map: dict[str, tuple[str, str | None, str | None]] = {
         "°C": ("°C", DEVICE_CLASS_TEMPERATURE, "mdi:thermometer"),
-        "K": ("K", DEVICE_CLASS_TEMPERATURE, "mdi:thermometer"),
+        "K": ("K", None, "mdi:thermometer-lines"),
         "kWh": ("kWh", DEVICE_CLASS_ENERGY, "mdi:lightning-bolt"),
         "Wh": ("Wh", DEVICE_CLASS_ENERGY, "mdi:lightning-bolt"),
         "kW": ("kW", DEVICE_CLASS_POWER, "mdi:flash"),

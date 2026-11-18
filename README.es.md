@@ -32,7 +32,11 @@ Se comunica directamente con la **interfaz Bluetooth integrada MK3 / EHC-08 / CU
 ## Características principales
 
 - **100 % inalámbrico por BLE:** Los terminales físicos `R-Bus` / `OpenTherm` / `L-Bus` quedan completamente libres.
-- **Emparejamiento PIN automático y nivel de acceso configurable (`auth_level: 1..4`):** Se empareja automáticamente con el PIN de 6 dígitos de tu caldera/aerotermia y desbloquea GATT Service 3 + CAN-BUS `RUB v2.01` en el nivel elegido (`1` = Usuario, `2` = Instalador Estándar, `3` = SAT/Servicio, `4` = Lab/OEM).
+- **Descubrimiento dinámico de UUID GATT, Emparejamiento PIN y soporte `GTW-IoT`:**
+  - Resuelve dinámicamente todos los handles GATT por UUID de 128 bits al conectar (`EHC-08`, `EHC-16`, `CU-*`, `GTW-22`, `GTW-IoT`).
+  - Soporta tanto el **módulo BLE integrado (`MK3` / `GTW-22`) con PIN de 6 dígitos** como el **hub externo `GTW-IoT` sin PIN** (omite simplemente `pin:` en el YAML).
+  - Recuperación automática ante claves eliminadas (límite de 3 dispositivos emparejados) y espera inteligente ante el bloqueo de 60 segundos (`90s → 180s → 300s → 600s`).
+  - Nivel de acceso configurable (`auth_level: 1..4`: `1` = Usuario, `2` = Instalador Estándar, `3` = SAT/Servicio, `4` = Lab/OEM).
 - **Soporte de Lectura y Escritura:**
   - `sensor`, `binary_sensor` y `text_sensor`: Temperaturas, presión de agua, estados binarios (`HM012`, `HM013`, `AM015`), estados de texto y contadores de energía consumida/producida (kWh).
   - `number` y `select`: Modificación de consignas numéricas (ej. consigna ACS confort/eco, curva de calefacción) y modos de funcionamiento (`WriteConfirmedRequest 0x04`) con límites min/max/paso obtenidos automáticamente de `0x502B`.

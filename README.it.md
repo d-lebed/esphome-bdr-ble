@@ -32,7 +32,11 @@ Comunica direttamente con l'**interfaccia Bluetooth integrata MK3 / EHC-08 / CU-
 ## Caratteristiche principali
 
 - **100% wireless via BLE:** I morsetti fisici `R-Bus` / `OpenTherm` / `L-Bus` restano completamente liberi.
-- **Pairing PIN automatico e livello di accesso configurabile (`auth_level: 1..4`):** Si associa automaticamente con il PIN a 6 cifre della caldaia/PDC e sblocca GATT Service 3 + CAN-BUS `RUB v2.01` al livello scelto (`1` = Utente, `2` = Installatore Standard, `3` = Assistenza, `4` = Lab/OEM).
+- **Rilevamento dinamico UUID GATT, Pairing PIN e supporto `GTW-IoT`:**
+  - Risolve dinamicamente tutti gli handle GATT tramite UUID a 128 bit alla connessione (`EHC-08`, `EHC-16`, `CU-*`, `GTW-22`, `GTW-IoT`).
+  - Supporta sia il **modulo BLE integrato (`MK3` / `GTW-22`) con PIN a 6 cifre**, sia l'**hub esterno `GTW-IoT` senza PIN** (ometti semplicemente `pin:` nel file YAML).
+  - Ripristino automatico in caso di rimozione del bond (limite di 3 dispositivi associati) e gestione del blocco di 60 secondi (`90s → 180s → 300s → 600s`).
+  - Livello di accesso configurabile (`auth_level: 1..4`: `1` = Utente, `2` = Installatore Standard, `3` = Assistenza, `4` = Lab/OEM).
 - **Supporto Lettura & Scrittura:**
   - `sensor`, `binary_sensor` & `text_sensor`: Temperature, pressione acqua, flag binari (`HM012`, `HM013`, `AM015`), stati testuali e contatori di energia consumata/prodotta (kWh).
   - `number` & `select`: Modifica setpoint numerici (es. temperatura ACS comfort/eco, curva climatica) e modalità operative (`WriteConfirmedRequest 0x04`) con limiti min/max/step rilevati automaticamente da `0x502B`.

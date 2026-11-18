@@ -605,8 +605,8 @@
             <p data-i18n="feat1_desc">Connects directly to the appliance's built-in MK3 / EHC-08 / CU-GH08 Bluetooth interface using any ESP32 (<code>ESP32</code>, <code>ESP32-S3</code>, <code>ESP32-C3</code>, <code>ESP32-C6</code>). Your physical <code>R-Bus</code> / <code>OpenTherm</code> / <code>L-Bus</code> terminals stay free.</p>
           </div>
           <div class="feature-card">
-            <h3 data-i18n="feat2_title">Automatic Passkey &amp; TEA Unlock</h3>
-            <p data-i18n="feat2_desc">Automatically performs BLE Passkey Entry bonding with your 6-digit boiler PIN and completes the two-stage 32-round TEA unlock handshake (GATT Service 3 + CAN-BUS <code>RUB v2.01</code>).</p>
+            <h3 data-i18n="feat2_title">Dynamic UUIDs, PIN &amp; GTW-IoT Support</h3>
+            <p data-i18n="feat2_desc">Dynamically resolves GATT handles by 128-bit UUID across all boards (<code>EHC-08</code>, <code>EHC-16</code>, <code>CU-*</code>), supports both 6-digit PIN Passkey bonding (<code>MK3</code> / <code>GTW-22</code>) and PIN-less <code>GTW-IoT</code> hubs, and auto-recovers from stale bonds and 60s lockouts.</p>
           </div>
           <div class="feature-card">
             <h3 data-i18n="feat3_title">Read &amp; Write Support</h3>
@@ -743,15 +743,28 @@
           </ul>
         </div>
 
-        <h3 data-i18n="reqs_pairing_title">Initial BLE Pairing Procedure</h3>
+        <h3 data-i18n="reqs_pairing_title">Route A: Onboard BLE Module (<code>MK3</code> / <code>GTW-22</code> / <code>EHC-*</code> / <code>CU-*</code>) — With 6-Digit PIN</h3>
         <ol data-i18n="reqs_pairing_steps">
-          <li>On your boiler / heat pump control panel (HMI), activate <strong>Bluetooth pairing mode</strong> so the 6-digit PIN code is displayed on the boiler screen.</li>
-          <li>Add that 6-digit PIN to your ESPHome <code>secrets.yaml</code>:
-            <pre><code>strateo_ble_pin: 123456</code></pre>
+          <li><strong>Advertises as:</strong> <code>EHC-...</code> or <code>CU-...</code> (with manufacturer data <code>"BDR"</code>).</li>
+          <li>On your boiler / heat pump control panel (HMI), activate <strong>Bluetooth pairing mode</strong> so the 6-digit PIN code is displayed on the screen (on some units like Remeha Confida 40 / Elga Ace, the static 6-digit PIN is printed on the internal BLE sticker).</li>
+          <li>Add that 6-digit PIN to your ESPHome <code>secrets.yaml</code> (<strong>wrap it in quotes if it starts with <code>0</code></strong>, otherwise YAML parses it as octal; <code>bdr_ble</code> logs <code>PIN: ****xx</code> at boot so you can verify the last 2 digits):
+            <pre><code>strateo_ble_pin: "012345"</code></pre>
           </li>
-          <li>Flash the ESP32. Upon connecting, <code>bdr_ble</code> automatically bonds using your PIN, saves the LTK bond in ESP32 NVS flash, and unlocks Service 3 + CAN-BUS <code>RUB v2.01</code>.</li>
-          <li><strong>Coexistence with the Official Mobile App:</strong> Because the boiler accepts one BLE connection at a time, include the <code>ble_client</code> switch (<code>Boiler BLE Connect</code>) in your YAML. Turning it <strong>Off</strong> in Home Assistant disconnects the ESP32 so you can connect with the <em>De Dietrich PRO / Baxi / Remeha Service Tool</em> phone app whenever needed.</li>
+          <li>Flash the ESP32 with <code>pin: !secret strateo_ble_pin</code> under <code>bdr_ble:</code>. Upon connecting, <code>bdr_ble</code> automatically bonds using your PIN, saves the LTK key in ESP32 NVS flash, and unlocks Service 3 + CAN-BUS <code>RUB v2.01</code>.</li>
         </ol>
+
+        <h3 data-i18n="reqs_gtwiot_title">Route B: External <code>GTW-IoT</code> Home Hub — Without PIN</h3>
+        <p data-i18n="reqs_gtwiot_desc">
+          Appliances using the external round <strong><code>GTW-IoT</code></strong> hub (advertising as <code>GTW-IOT_&lt;serial&gt;</code>, e.g., Remeha Confida 10) do not use BLE Passkey encryption. Simply <strong>omit the <code>pin:</code> option</strong> under <code>bdr_ble:</code> in your YAML, briefly press the button on the <code>GTW-IoT</code> hub to make it connectable, and <code>bdr_ble</code> will connect directly in plain BLE mode and perform the two-stage TEA unlock handshake.
+        </p>
+
+        <h3 data-i18n="reqs_gateway_rules_title">Dynamic GATT UUID Discovery &amp; Gateway Auto-Recovery</h3>
+        <ul data-i18n="reqs_gateway_rules_list">
+          <li><strong>Dynamic GATT Handle Resolution by UUID:</strong> Different controller boards (<code>EHC-08</code>, <code>EHC-16</code>, <code>CU-*</code>, <code>GTW-22</code>, <code>GTW-IoT</code>) place the BLE characteristics at different attribute handles. On every connection, <code>bdr_ble</code> dynamically queries the GATT database by 128-bit UUID to resolve the exact characteristic and CCCD handles automatically.</li>
+          <li><strong>3-Device Bond Limit &amp; Stale Key Auto-Recovery:</strong> The appliance's internal BLE gateway (<code>GTW-Blue</code>) stores at most <strong>3 paired devices</strong> and silently evicts the oldest bond when a 4th device pairs. If the ESP32's stored bond is evicted (<code>0x61 Encryption Failed</code>), <code>bdr_ble</code> automatically deletes the stale local bond from ESP32 NVS so the next attempt performs a fresh Passkey pairing.</li>
+          <li><strong>60-Second Gateway Lockout Backoff (<code>0x56 Repeated Attempts</code>):</strong> After a failed pairing attempt, the boiler's BLE module rejects all new pairing attempts for <strong>60 seconds</strong>. Rather than retrying every few seconds (which would extend the lockout indefinitely), <code>bdr_ble</code> pauses <code>ble_client</code> and waits with exponential backoff (<code>90s → 180s → 300s → 600s</code>), publishing the status and countdown to the <code>BLE Status</code> sensor.</li>
+          <li><strong>Coexistence with the Official Mobile App:</strong> Because the boiler accepts only <strong>one active BLE connection at a time</strong>, include the <code>ble_client</code> switch (<code>Boiler BLE Connect</code>) in your YAML. Turning it <strong>Off</strong> in Home Assistant releases the BLE link so you can connect with your smartphone.</li>
+        </ul>
       </section>
 
       <section id="quick-start">

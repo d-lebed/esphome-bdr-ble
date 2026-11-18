@@ -32,7 +32,11 @@ Communiceert rechtstreeks met de ingebouwde **MK3 / EHC-08 / CU-GH08 Bluetooth-i
 ## Kenmerken
 
 - **100% draadloos via BLE:** Uw fysieke `R-Bus` / `OpenTherm` / `L-Bus`-klemmen blijven volledig vrij.
-- **Automatische Passkey-koppeling & instelbaar toegangsniveau (`auth_level: 1..4`):** Koppelt automatisch met uw 6-cijferige pincode en ontgrendelt GATT Service 3 + CAN-BUS `RUB v2.01` op het gekozen niveau (`1` = Eindgebruiker, `2` = Installateur Standaard, `3` = Service, `4` = Lab/OEM).
+- **Dynamische GATT UUID-detectie, Passkey-koppeling & `GTW-IoT`-ondersteuning:**
+  - Zoekt bij elke verbinding alle GATT-handles en CCCD's dynamisch op via 128-bit UUID (`EHC-08`, `EHC-16`, `CU-*`, `GTW-22`, `GTW-IoT`).
+  - Ondersteunt zowel de **ingebouwde BLE-module (`MK3` / `GTW-22`) met 6-cijferige pincode** als de **externe `GTW-IoT` home-hub zonder pincode** (laat `pin:` in de YAML simpelweg weg en druk kort op de knop van de hub).
+  - Automatisch herstel bij een gewiste bond (max. 3 gekoppelde apparaten) en slimme wachttijd bij de 60-seconden blokkade (`90s → 180s → 300s → 600s` backoff).
+  - Instelbaar toegangsniveau (`auth_level: 1..4`: `1` = Eindgebruiker, `2` = Installateur Standaard, `3` = Service, `4` = Lab/OEM).
 - **Lezen & Schrijven:**
   - `sensor`, `binary_sensor` & `text_sensor`: Temperaturen, waterdruk, binaire statusvlaggen (`HM012`, `HM013`, `AM015`), status-enums en kWh-energietellers uitlezen.
   - `number` & `select`: Numerieke setpoints (bijv. SWW comfort/eco-temperatuur, stooklijn) en bedrijfsmodi wijzigen (`WriteConfirmedRequest 0x04`) met automatische min/max/stap-grenzen uit `0x502B`.

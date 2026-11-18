@@ -32,7 +32,11 @@ Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Blu
 ## Highlights
 
 - **100% Wireless over BLE:** Leaves your physical `R-Bus` / `OpenTherm` / `L-Bus` terminals completely free.
-- **Automatic Passkey Bonding & Configurable Access Level (`auth_level: 1..4`):** Automatically pairs with your 6-digit boiler PIN and unlocks GATT Service 3 + CAN-BUS `RUB v2.01` at your chosen access level (`1` = End User Safe, `2` = Installer Standard, `3` = Service, `4` = Lab/OEM).
+- **Dynamic GATT UUID Discovery, Passkey Bonding & `GTW-IoT` Support:**
+  - Dynamically resolves all GATT characteristic and CCCD handles by 128-bit UUID on connect (working across `EHC-08`, `EHC-16`, `CU-*`, `GTW-22`, and `GTW-IoT` attribute layouts).
+  - Supports both **onboard BLE (`MK3` / `GTW-22`) with 6-digit PIN Passkey bonding** and **external `GTW-IoT` hubs without PIN** (simply omit `pin:` in YAML and press the hub button).
+  - Automatically recovers from stale bonds (when a 4th paired device evicts the oldest of the gateway's 3 slots) and respects the gateway's 60-second lockout window (`90s → 180s → 300s → 600s` backoff).
+  - Configurable hardware access level (`auth_level: 1..4`: `1` = End User Safe, `2` = Installer Standard, `3` = Service, `4` = Lab/OEM).
 - **Read & Write Support:**
   - `sensor`, `binary_sensor` & `text_sensor`: Read temperatures, water pressure, boolean status flags (`HM012`, `HM013`, `AM015`), status enums, and kWh energy consumption/delivery counters.
   - `number` & `select`: Edit numeric setpoints (e.g., DHW comfort/eco temperature, flow setpoints) and enum operating modes (`WriteConfirmedRequest 0x04`) with automatic hardware range discovery from `0x502B`.
@@ -80,7 +84,7 @@ ble_client:
 bdr_ble:
   id: boiler_hub
   ble_client_id: boiler_ble
-  pin: !secret strateo_ble_pin
+  pin: !secret strateo_ble_pin  # Omit 'pin:' for external GTW-IoT hubs (no PIN); wrap leading-zero PINs in quotes ("012345") in secrets.yaml
   node_id: 1
   auth_level: 4
 

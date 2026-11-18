@@ -32,7 +32,11 @@ Die Komponente kommuniziert direkt mit der integrierten **MK3 / EHC-08 / CU-GH08
 ## Highlights
 
 - **100 % drahtlos über BLE:** Ihre physischen `R-Bus`- / `OpenTherm`- / `L-Bus`-Klemmen bleiben vollständig frei.
-- **Automatische Passkey-Kopplung & konfigurierbare Zugriffsebene (`auth_level: 1..4`):** Koppelt automatisch mit der 6-stelligen PIN Ihres Heizgeräts und entsperrt GATT Service 3 + CAN-BUS `RUB v2.01` auf der gewählten Zugriffsebene (`1` = Endbenutzer sicher, `2` = Fachhandwerker Standard, `3` = Service, `4` = Labor/OEM).
+- **Dynamische GATT-UUID-Erkennung, Passkey-Kopplung & `GTW-IoT`-Unterstützung:**
+  - Löst alle GATT-Handles und CCCDs beim Verbinden dynamisch per 128-Bit-UUID auf (kompatibel mit `EHC-08`, `EHC-16`, `CU-*`, `GTW-22` und `GTW-IoT`).
+  - Unterstützt sowohl **integrierte BLE-Module (`MK3` / `GTW-22`) mit 6-stelliger PIN** als auch **externe `GTW-IoT`-Hubs ohne PIN** (`pin:` im YAML einfach weglassen).
+  - Automatische Wiederherstellung bei gelöschten Bindungen (3-Geräte-Limit des Gateways) und Einhaltung der 60-Sekunden-Sperre (`90s → 180s → 300s → 600s` Backoff).
+  - Konfigurierbare Zugriffsebene (`auth_level: 1..4`: `1` = Endbenutzer sicher, `2` = Fachhandwerker Standard, `3` = Service, `4` = Labor/OEM).
 - **Lese- & Schreibunterstützung:**
   - `sensor`, `binary_sensor` & `text_sensor`: Temperaturen, Wasserdruck, Status-Flags (`HM012`, `HM013`, `AM015`), Status-Enums sowie kWh-Energieverbrauchs- und Wärmemengenzähler auslesen.
   - `number` & `select`: Numerische Sollwerte (z. B. Warmwasser-Komfort-/Eco-Sollwert, Vorlaufsollwerte) und Betriebsarten (`WriteConfirmedRequest 0x04`) mit automatischer Hardware-Grenzwertprüfung aus `0x502B` anpassen.

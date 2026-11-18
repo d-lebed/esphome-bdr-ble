@@ -32,7 +32,11 @@ Communique directement avec l'**interface Bluetooth intégrée MK3 / EHC-08 / CU
 ## Points forts
 
 - **100 % sans fil via BLE :** Vos borniers physiques `R-Bus` / `OpenTherm` / `L-Bus` restent totalement libres.
-- **Appairage PIN automatique & niveau d'accès configurable (`auth_level: 1..4`) :** S'appaire automatiquement avec le code PIN à 6 chiffres de votre chaudière/PAC et déverrouille GATT Service 3 + bus CAN `RUB v2.01` au niveau choisi (`1` = Utilisateur, `2` = Installateur Standard, `3` = SAV/Service, `4` = Labo/OEM).
+- **Découverte dynamique des UUID GATT, Appairage PIN & support `GTW-IoT` :**
+  - Résout dynamiquement tous les handles GATT par UUID 128 bits à la connexion (`EHC-08`, `EHC-16`, `CU-*`, `GTW-22`, `GTW-IoT`).
+  - Supporte aussi bien le **module BLE intégré (`MK3` / `GTW-22`) avec code PIN à 6 chiffres** que le **hub externe `GTW-IoT` sans code PIN** (omettez simplement `pin:` dans le YAML).
+  - Renouvellement automatique de la clé si l'ESP32 est évincé (limite de 3 appareils appairés) et respect du délai de blocage de 60 secondes (`90s → 180s → 300s → 600s`).
+  - Niveau d'accès configurable (`auth_level: 1..4` : `1` = Utilisateur, `2` = Installateur Standard, `3` = SAV/Service, `4` = Labo/OEM).
 - **Support Lecture & Écriture :**
   - `sensor`, `binary_sensor` & `text_sensor` : Températures, pression d'eau, états binaires (`HM012`, `HM013`, `AM015`), états texte et compteurs d'énergie consommée/produite (kWh).
   - `number` & `select` : Modification des consignes numériques (ex. consigne ECS confort/éco, loi d'eau) et des modes de fonctionnement (`WriteConfirmedRequest 0x04`) avec récupération automatique des limites min/max/pas depuis `0x502B`.

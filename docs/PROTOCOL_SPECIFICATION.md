@@ -61,12 +61,17 @@ Reading or writing any characteristic without BLE Gap Bonding returns GATT error
 
 ---
 
-## 3. Layer 0: BLE Gap Bonding (ESPHome Quirks & Solution)
+## 3. Layer 0: BLE Gap Bonding, Dynamic GATT Handles & Gateway Rules
 
-1. **ESP-IDF Default IO Capability Issue**:
-   By default, ESPHome sets `esp32_ble: io_capability: none`. When the boiler initiates Passkey Entry bonding, ESP-IDF immediately rejects pairing if `io_capability` is `none`.
-   **Solution**: Set `io_capability: keyboard_only`, call `id(strateo_ble)->pair()` in `on_connect`, and handle `on_passkey_request` with the 6-digit PIN (`123456`).
-2. **`bluetooth_proxy` Conflict**:
+1. **Dynamic GATT Handle Resolution by UUID**:
+   While the 128-bit service and characteristic UUIDs are identical across all BDR Thermea BLE modules (`MK3`, `GTW-22`, `GTW-IoT`), attribute handle numbers vary depending on the board's GATT table layout (for example, `DirectChannel` TX/RX are at handles `18` / `20` on `EHC-08`, but at handles `14` / `16` on `EHC-16`). `bdr_ble` queries the GATT attribute table by 128-bit UUID upon `ESP_GATTC_SEARCH_CMPL_EVT` (`resolve_gatt_handles_()`) to dynamically resolve all characteristic and `0x2902` CCCD handles.
+2. **Two BLE Hardware Routes (PIN vs. PIN-less `GTW-IoT`)**:
+   - **Onboard BLE (`MK3` / `GTW-22` / `EHC-*` / `CU-*`)**: Advertises as `EHC-...` or `CU-...` and requires **BLE LE Secure Connections Passkey Entry** using a 6-digit PIN (displayed on the boiler's HMI screen or printed on the internal BLE sticker). Set `esp32_ble: io_capability: keyboard_only` and specify `pin: !secret strateo_ble_pin` (wrap PINs starting with `0` in quotes in `secrets.yaml`).
+   - **External `GTW-IoT` Home Hub**: Advertises as `GTW-IOT_<serial>` and operates over an **unencrypted plain BLE connection** (button pairing on the hub, followed directly by the Service 3 + `RUB v2.01` TEA handshakes). Omit `pin:` under `bdr_ble:` to enable plain BLE mode.
+3. **Gateway (`GTW-Blue`) Bonding Slot Eviction & 60s Lockout**:
+   - **Maximum 3 Paired Devices**: The internal BLE gateway stores at most **3 bonds** and evicts the oldest when a 4th device pairs. If the ESP32's stored bond is evicted, encryption fails (`0x61`). `bdr_ble` detects this, removes the stale bond from ESP32 NVS via `esp_ble_remove_bond_device()`, and performs a fresh Passkey pairing on the next attempt.
+   - **60-Second Lockout Window (`0x56 Repeated Attempts`)**: After a failed pairing attempt, the gateway rejects all pairing requests for **60 seconds**. Retrying every few seconds extends the lockout indefinitely. `bdr_ble` pauses `ble_client` (`set_enabled(false)`) with exponential backoff (`90s → 180s → 300s → 600s`) so the lockout window expires cleanly.
+4. **`bluetooth_proxy` Conflict**:
    When `bluetooth_proxy` is enabled and Home Assistant connects to it, `esp32_ble_tracker` switches to RAW advertisement forwarding mode and stops firing local `ESPBTDevice` discovery callbacks required by `ble_client`.
    **Solution**: Do not enable `bluetooth_proxy` on the same ESP32 that runs `ble_client` for the boiler.
 

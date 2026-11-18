@@ -32,7 +32,11 @@ Komunikuje się bezpośrednio z wbudowanym w urządzenie **modułem Bluetooth MK
 ## Najważniejsze funkcje
 
 - **100% bezprzewodowo przez BLE:** Zaciski `R-Bus` / `OpenTherm` / `L-Bus` na płycie kotła pozostają całkowicie wolne.
-- **Automatyczne parowanie PIN i wybór poziomu dostępu (`auth_level: 1..4`):** Automatycznie paruje się przy użyciu 6-cyfrowego kodu PIN z ekranu kotła i odblokowuje GATT Service 3 + magistralę CAN `RUB v2.01` na wybranym poziomie uprawnień (`1` = Użytkownik, `2` = Instalator Standard, `3` = Serwis, `4` = OEM/Lab).
+- **Dynamiczne wykrywanie UUID GATT, parowanie PIN i obsługa `GTW-IoT`:**
+  - Automatycznie wykrywa uchwyty charakterystyk GATT po 128-bitowych UUID przy połączeniu (`EHC-08`, `EHC-16`, `CU-*`, `GTW-22`, `GTW-IoT`).
+  - Obsługuje zarówno **wbudowany moduł BLE (`MK3` / `GTW-22`) z 6-cyfrowym kodem PIN**, jak i **zewnętrzny hub `GTW-IoT` bez kodu PIN** (wystarczy pominąć `pin:` w YAML).
+  - Automatyczne odnawianie klucza po usunięciu najstarszego powiązania (limit 3 urządzeń) oraz obsługa 60-sekundowej blokady bramki (`90s → 180s → 300s → 600s`).
+  - Konfigurowalny poziom dostępu (`auth_level: 1..4`: `1` = Użytkownik, `2` = Instalator Standard, `3` = Serwis, `4` = OEM/Lab).
 - **Odczyt i zapis parametrów:**
   - `sensor`, `binary_sensor` i `text_sensor`: Odczyt temperatur, ciśnienia wody, flag binarnych (`HM012`, `HM013`, `AM015`), statusów tekstowych oraz liczników zużytej i wyprodukowanej energii (kWh).
   - `number` i `select`: Zmiana nastaw liczbowych (np. temperatura komfortowa/eko c.w.u., nastawy zasilania) oraz trybów pracy (`WriteConfirmedRequest 0x04`) z automatycznym pobraniem zakresów min/max/krok z tabeli `0x502B`.

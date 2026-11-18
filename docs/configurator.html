@@ -1532,7 +1532,7 @@
         lines.push("bdr_ble:");
         lines.push("  id: strateo_hub");
         lines.push("  ble_client_id: strateo_ble");
-        lines.push("  pin: !secret strateo_ble_pin");
+        lines.push("  pin: !secret strateo_ble_pin  # Omit 'pin:' if using an external GTW-IoT hub (no PIN)");
         lines.push("  node_id: 1");
         lines.push("  auth_level: " + effectiveAuthLevel);
         lines.push("");

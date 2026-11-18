@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Published the interactive ESPHome YAML Constructor on GitHub Pages (`https://d-lebed.github.io/esphome-bdr-ble/`).
+
 ---
 
 ## [1.0.0] - 2026-11-18

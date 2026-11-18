@@ -4,6 +4,8 @@ An ESPHome external component (`bdr_ble`) for **BDR Thermea Group** heat pumps, 
 
 Communicates directly with the appliance over Bluetooth Low Energy using a standard ESP32 board (`ESP32`, `ESP32-S3`, `ESP32-C3`, `ESP32-C6`) — **no proprietary gateway (`GTW-08`, `SMART TC`, etc.) or additional hardware wiring is required**, and your existing R-Bus / OpenTherm room thermostat connection remains untouched.
 
+> **Interactive ESPHome YAML Constructor (GitHub Pages):** **[https://d-lebed.github.io/esphome-bdr-ble/](https://d-lebed.github.io/esphome-bdr-ble/)**
+
 ---
 
 ## Key Features
@@ -298,8 +300,8 @@ Here is the recommended **3-step workflow** to discover and configure the exact 
    [I][bdr_ble:716]: === End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===
    ```
 
-### Step 2: Paste the Snapshot into `docs/configurator.html` & Pick Your Sensors
-1. Open **[`docs/configurator.html`](./docs/configurator.html)** in your browser (it is a 100% self-contained single-file HTML+JS page with the entire OBD catalog built in).
+### Step 2: Paste the Snapshot into the Interactive Configurator & Pick Your Sensors
+1. Open the **[Interactive ESPHome YAML Constructor (GitHub Pages)](https://d-lebed.github.io/esphome-bdr-ble/)** (or open [`docs/configurator.html`](./docs/configurator.html) locally in your browser).
 2. Copy the `BDR_SNAPSHOT:...` lines from your ESPHome log (you can copy them raw, even with `[I][bdr_ble:...]` prefixes and timestamps) and paste them into the **`Paste BDR_SNAPSHOT:... lines from ESPHome logs`** input box.
 3. The table immediately filters down to **only the exact parameters, live measurements (`Signal`), and counters (`Counter`) reported by your boiler's `0x502B` descriptor**.
 4. Check the sensors you want, choose their polling interval (`5s`, `10s`, `30s`, `60s`, `300s`), and choose your YAML formatting options in the right-hand toolbar:
@@ -317,8 +319,8 @@ Some internal CANopen datapoints (such as certain aggregate counters like `varAp
 
 ## Protocol & Reverse-Engineering Documentation
 
+- **[Live Interactive ESPHome YAML Constructor (GitHub Pages)](https://d-lebed.github.io/esphome-bdr-ble/)** ([source](./docs/configurator.html))
 - [BDR Thermea / De Dietrich BLE Protocol Specification](./docs/PROTOCOL_SPECIFICATION.md)
-- [Interactive HTML+JS ESPHome YAML Constructor](./docs/configurator.html)
 - [Changelog](./CHANGELOG.md)
 
 ---

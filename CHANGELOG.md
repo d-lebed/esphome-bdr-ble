@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.0.0] - 2026-11-18
+
 ### Added
 - **Parameter Writing Support (`number` & `select` platforms):**
   - Added `number` platform (`components/bdr_ble/number/`) for writable numeric parameters (`U8`, `I8`, `U16`, `I16`, `U32`, `I32`) with automatic unit/step/range inference and dynamic `min_value`/`max_value`/`step` updates from the boiler's `0x502B:01..05` menu descriptors.
@@ -56,5 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/d-lebed/esphome-bdr-ble/releases/tag/v0.3.0

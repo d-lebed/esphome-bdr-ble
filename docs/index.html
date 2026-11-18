@@ -1,12 +1,880 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0; url=./configurator.html">
-  <title>BDR Thermea BLE — ESPHome YAML Constructor</title>
-  <script>window.location.replace("./configurator.html");</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESPHome BDR Thermea / De Dietrich / Baxi / Remeha Bluetooth (BLE) Integration for Home Assistant</title>
+  <meta name="description" content="Connect and control De Dietrich (Strateo, Alezio, Evodens, Naneo, Modulens), Baxi (Alya, Luna, Auriga), Remeha (Elga Ace, Calenta Ace, Tzerra Ace, Mercuria), Brötje, Chappée, and Oertli boilers and heat pumps over Bluetooth Low Energy (BLE) with ESPHome and Home Assistant using any ESP32 — no GTW-08 gateway required." />
+  <meta name="keywords" content="De Dietrich Bluetooth Home Assistant, De Dietrich Strateo ESPHome, BDR Thermea BLE, De Dietrich Pro Bluetooth protocol, Baxi Bluetooth ESPHome, Remeha Ace Bluetooth Home Assistant, Brötje BLE ESPHome, Chappée Bluetooth, Oertli BLE, EHC-08, CU-GH08, CU-08, MK3 BLE, GTW-08 alternative, OpenTherm R-Bus Bluetooth" />
+  <meta name="author" content="d-lebed" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://d-lebed.github.io/esphome-bdr-ble/" />
+
+  <!-- Open Graph / Social -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://d-lebed.github.io/esphome-bdr-ble/" />
+  <meta property="og:title" content="ESPHome BDR Thermea / De Dietrich / Baxi / Remeha BLE Component for Home Assistant" />
+  <meta property="og:description" content="Monitor and control BDR Thermea heat pumps and boilers (De Dietrich Strateo, Alezio, Evodens, Baxi, Remeha, Brötje) over Bluetooth Low Energy with ESPHome & Home Assistant. No GTW-08 gateway needed." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ESPHome BDR Thermea / De Dietrich BLE Integration for Home Assistant" />
+  <meta name="twitter:description" content="100% wireless Bluetooth Low Energy ESPHome component & interactive YAML configurator for De Dietrich, Baxi, Remeha, and Brötje boilers and heat pumps." />
+
+  <!-- Structured Data (JSON-LD) for Search Engines -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "esphome-bdr-ble",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "ESPHome / ESP-IDF / Home Assistant",
+        "softwareVersion": "1.0.0",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "url": "https://d-lebed.github.io/esphome-bdr-ble/",
+        "codeRepository": "https://github.com/d-lebed/esphome-bdr-ble",
+        "description": "ESPHome external component and interactive YAML configurator for monitoring and controlling BDR Thermea Group heat pumps and condensing boilers (De Dietrich, Baxi, Remeha, Brötje, Chappée, Oertli) over Bluetooth Low Energy (BLE) in Home Assistant.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Can I use Bluetooth (bdr_ble) at the same time as an OpenTherm or R-Bus thermostat?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Because bdr_ble communicates wirelessly with the boiler's built-in MK3 / EHC-08 / CU-GH08 Bluetooth Low Energy module, your physical R-Bus, OpenTherm, and L-Bus terminals remain 100% free. You can keep your OpenTherm ESP32 or room thermostat connected while reading energy counters, temperatures, water pressure, and editing parameters over BLE."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I need a GTW-08 gateway or SMART TC thermostat to connect my De Dietrich / Baxi / Remeha boiler to Home Assistant?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Any standard ESP32 board (ESP32, ESP32-S3, ESP32-C3, ESP32-C6) running ESPHome within Bluetooth range of the appliance connects directly to the built-in BLE interface used by the official De Dietrich PRO / Baxi / Remeha Service Tool app."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which heat pumps and boilers are tested and supported?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "This component has ONLY been physically tested on a De Dietrich Strateo R32 (controller board EHC-08). Other BDR Thermea appliances (De Dietrich, Baxi, Remeha, Brötje, Chappée, Oertli) using EHC-*, CU-*, or SCB-* boards share the same protocol in the official Service Tool app and are listed as theoretical / untested compatibility only."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-alt: #263349;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --purple: #a855f7;
+      --code-bg: #0b1120;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Sticky Top Navbar */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .navbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 17px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .navbar-brand:hover { text-decoration: none; }
+    .badge {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      font-size: 12px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .nav-links a.nav-item {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .nav-links a.nav-item:hover {
+      color: var(--text);
+      text-decoration: none;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+      color: var(--text);
+    }
+    .btn:hover {
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #0f172a;
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+      color: #fff;
+    }
+
+    /* Hero Banner */
+    .hero {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 48px 24px 36px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hero h1 {
+      font-size: clamp(26px, 4vw, 40px);
+      line-height: 1.2;
+      margin: 0 0 16px;
+      letter-spacing: -0.02em;
+    }
+    .hero p.lead {
+      font-size: 18px;
+      color: #cbd5e1;
+      max-width: 900px;
+      margin: 0 0 24px;
+    }
+    .cta-banner {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(168, 85, 247, 0.12));
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 12px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    .cta-banner-text h2 {
+      margin: 0 0 4px;
+      font-size: 18px;
+      color: #f8fafc;
+    }
+    .cta-banner-text p {
+      margin: 0;
+      font-size: 14.5px;
+      color: #cbd5e1;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Layout Grid */
+    .layout {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 40px;
+      align-items: start;
+    }
+    @media (max-width: 920px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .toc {
+        position: static !important;
+      }
+    }
+    .toc {
+      position: sticky;
+      top: 76px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .toc h3 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .toc ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .toc a {
+      color: #cbd5e1;
+      font-size: 13.5px;
+      display: block;
+      padding: 4px 6px;
+      border-radius: 5px;
+    }
+    .toc a:hover {
+      background: var(--panel-alt);
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .toc a.toc-highlight {
+      color: var(--accent);
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      margin-bottom: 6px;
+    }
+
+    /* Content Typography */
+    .content section {
+      margin-bottom: 48px;
+      scroll-margin-top: 80px;
+    }
+    .content h2 {
+      font-size: 24px;
+      margin: 0 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      color: #f8fafc;
+    }
+    .content h3 {
+      font-size: 18px;
+      margin: 28px 0 10px;
+      color: #e2e8f0;
+    }
+    .content p, .content li {
+      color: #cbd5e1;
+      font-size: 15.5px;
+    }
+    .content ul, .content ol {
+      padding-left: 22px;
+    }
+    .content li {
+      margin-bottom: 8px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9em;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #e2e8f0;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 14px 0 20px;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .feature-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .feature-card h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: var(--accent);
+    }
+    .feature-card p {
+      margin: 0;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+    .table-scroll {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin: 16px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: var(--panel);
+    }
+    th, td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: var(--panel-alt);
+      color: #f8fafc;
+      font-weight: 600;
+      font-size: 12.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tr:last-child td { border-bottom: none; }
+    .callout {
+      background: rgba(56, 189, 248, 0.08);
+      border-left: 4px solid var(--accent);
+      padding: 14px 18px;
+      border-radius: 0 8px 8px 0;
+      margin: 16px 0;
+    }
+    .callout-warn {
+      background: rgba(245, 158, 11, 0.08);
+      border-left-color: var(--amber);
+    }
+    .faq-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+    }
+    .faq-item h3 {
+      margin: 0 0 6px;
+      font-size: 16.5px;
+      color: #f8fafc;
+    }
+    .faq-item p {
+      margin: 0;
+      font-size: 14.5px;
+    }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13.5px;
+    }
+  </style>
 </head>
 <body>
-  <p>Redirecting to <a href="./configurator.html">BDR Thermea BLE ESPHome YAML Constructor</a>...</p>
+
+  <nav class="navbar" aria-label="Main Navigation">
+    <a class="navbar-brand" href="./">
+      <span>esphome-bdr-ble</span>
+      <span class="badge">v1.0.0</span>
+    </a>
+    <div class="nav-links">
+      <a class="nav-item" href="#compatibility">Supported Models</a>
+      <a class="nav-item" href="#quick-start">Quick Start</a>
+      <a class="nav-item" href="#discovery-workflow">Discovery Guide</a>
+      <a class="nav-item" href="#configuration">YAML Reference</a>
+      <a class="nav-item" href="#faq">FAQ</a>
+      <a class="btn btn-primary" href="./configurator.html">⚡ Open YAML Configurator</a>
+      <a class="btn" href="https://github.com/d-lebed/esphome-bdr-ble" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <h1>ESPHome Bluetooth (BLE) Integration for BDR Thermea, De Dietrich, Baxi, Remeha &amp; Brötje Boilers and Heat Pumps</h1>
+    <p class="lead">
+      Monitor live temperatures, water pressure, and energy consumption/delivery counters, and edit heating &amp; DHW parameters directly from <strong>Home Assistant</strong> over <strong>Bluetooth Low Energy (BLE)</strong> using a standard <strong>ESP32</strong> — <strong>no proprietary gateway (<code>GTW-08</code>, <code>SMART TC</code>) or wiring required</strong>, while keeping your existing <strong>OpenTherm / R-Bus</strong> room thermostat untouched.
+    </p>
+
+    <div class="cta-banner">
+      <div class="cta-banner-text">
+        <h2>Interactive ESPHome YAML Constructor</h2>
+        <p>Browse all 3,092 BDR Thermea OBD datapoints, filter by boiler/heat-pump board model (<code>EHC-08</code>, <code>CU-08</code>, etc.) or paste your live <code>BDR_SNAPSHOT:</code> log to generate ready-to-flash ESPHome YAML.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="./configurator.html">Launch Interactive YAML Configurator →</a>
+        <a class="btn" href="https://github.com/d-lebed/esphome-bdr-ble" target="_blank" rel="noopener">View Repository on GitHub</a>
+      </div>
+    </div>
+
+    <div class="callout callout-warn" style="margin-top: 20px; border-left-width: 5px;">
+      <strong>⚠️ IMPORTANT WARNING — USE AT YOUR OWN RISK &amp; WARRANTY DISCLAIMER:</strong>
+      <p style="margin: 6px 0 0; font-size: 14.5px; color: #fde68a;">
+        1. <strong>Tested Hardware Scope:</strong> This component has been <strong>physically tested ONLY on a De Dietrich Strateo R32 (<code>EHC-08</code> controller board)</strong>. All other appliance models and controller boards listed on this page are <strong>untested theoretical matches</strong> derived from the shared BDR Thermea protocol dictionary.<br />
+        2. <strong>Risk of Damage &amp; Loss of Warranty:</strong> This is an unofficial, experimental project. Connecting third-party devices or modifying installer-level (<code>auth_level: 4</code>) parameters over BLE/CANopen may cause improper operation, equipment damage, safety hazards, or <strong>void your manufacturer and installer warranty</strong>. By using this software, you accept full and sole responsibility for any consequences. See the <a href="#disclaimer">full Legal Disclaimer</a> below.
+      </p>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="toc" aria-label="Table of Contents">
+      <h3>Documentation</h3>
+      <ul>
+        <li><a class="toc-highlight" href="./configurator.html">⚡ YAML Configurator</a></li>
+        <li><a href="#features">Key Features</a></li>
+        <li><a href="#compatibility">Supported Boilers &amp; Heat Pumps</a></li>
+        <li><a href="#requirements">Requirements &amp; Pairing</a></li>
+        <li><a href="#quick-start">Quick Start YAML</a></li>
+        <li><a href="#discovery-workflow">3-Step Sensor Discovery</a></li>
+        <li><a href="#configuration">Configuration Reference</a></li>
+        <li><a href="#writable-parameters">Editing Parameters (number / select)</a></li>
+        <li><a href="#faq">FAQ &amp; Troubleshooting</a></li>
+        <li><a href="#protocol">Protocol Specification</a></li>
+        <li><a href="#disclaimer">Legal Notice &amp; License</a></li>
+      </ul>
+    </aside>
+
+    <main class="content">
+      <section id="features">
+        <h2>Key Features</h2>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>100% Wireless over BLE</h3>
+            <p>Connects directly to the appliance's built-in MK3 / EHC-08 / CU-GH08 Bluetooth interface using any ESP32 (<code>ESP32</code>, <code>ESP32-S3</code>, <code>ESP32-C3</code>, <code>ESP32-C6</code>). Your physical <code>R-Bus</code> / <code>OpenTherm</code> / <code>L-Bus</code> terminals stay free.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Automatic Passkey &amp; TEA Unlock</h3>
+            <p>Automatically performs BLE Passkey Entry bonding with your 6-digit boiler PIN and completes the two-stage 32-round TEA unlock handshake (GATT Service 3 + CAN-BUS <code>RUB v2.01</code>).</p>
+          </div>
+          <div class="feature-card">
+            <h3>Read &amp; Write Support</h3>
+            <p>Read temperatures, pressures, status enums, and kWh energy counters (<code>sensor</code>, <code>text_sensor</code>), and edit numeric setpoints and operating modes (<code>number</code>, <code>select</code>) via confirmed CANopen writes.</p>
+          </div>
+          <div class="feature-card">
+            <h3>3,092-Datapoint OBD Dictionary</h3>
+            <p>Reference parameters by short installer menu code (<code>AM027</code>, <code>DM001</code>, <code>AC005</code>, <code>DP070</code>), OBD name (<code>varApTotalEnergyDelivery</code>), or hex index (<code>0x5044:00</code>) with zero firmware bloat.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Batch Polling &amp; Auto-Skip</h3>
+            <p>Combines datapoints sharing an <code>update_interval</code> into high-speed <code>GetListRequest (0x08)</code> batches and automatically disables unsupported parameters reported by the boiler.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Live <code>0x502B</code> Appliance Snapshot</h3>
+            <p>Reads the boiler's internal menu descriptor table (<code>0x502B:01..15</code>) on connect, refines <code>number</code> min/max/step limits, and outputs <code>BDR_SNAPSHOT:</code> lines for the <a href="./configurator.html">YAML Configurator</a>.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="compatibility">
+        <h2>Hardware Compatibility (Tested vs. Theoretical / Untested)</h2>
+
+        <h3>✅ Physically Tested &amp; Verified Hardware</h3>
+        <p>
+          This integration has been <strong>physically tested and verified ONLY on the following appliance</strong>:
+        </p>
+        <ul>
+          <li><strong>De Dietrich Strateo R32</strong> air-to-water split heat pump with integrated DHW tank and electric backup heater</li>
+          <li>Controller board: <strong><code>EHC-08</code></strong> (advertised BLE name <code>EHC-08_&lt;serial&gt;</code>, manufacturer data <code>"BDR"</code>)</li>
+          <li>BLE firmware: <code>01.00</code>, BLE protocol: <code>01.03</code>, RUB protocol: <code>02.01</code></li>
+          <li>ESPHome node: <strong>ESP32-C6</strong> (<code>esp32-c6-devkitm-1</code>, ESP-IDF framework)</li>
+        </ul>
+
+        <h3>⚠️ Theoretical Compatibility (NOT Tested on Real Hardware)</h3>
+        <div class="callout callout-warn">
+          <strong>Untested Models Notice:</strong> The controller boards and appliance models in the table below have <strong>NOT been tested by the author</strong>. They are listed strictly as reference information because they share the same BLE GATT service (<code>f8fc98e4-5919-4a5c-852e-dfe04ad383c0</code>), TEA unlock algorithm, and <code>RUB v2.01</code> CANopen Object Dictionary in the official mobile service application. Compatibility is not guaranteed, and any testing on these units is done strictly at your own risk.
+        </div>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Controller Board</th>
+                <th>Appliance Category</th>
+                <th>Brands &amp; Commercial Models</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>EHC-08</code> / <code>EHC-06</code></td>
+                <td>Air-to-Water Heat Pump (Split, Integrated DHW)</td>
+                <td><strong>De Dietrich</strong> Strateo · <strong>Baxi</strong> Alya FS Slim, BC Smart iR32, PBS-i FS Slim · <strong>Remeha</strong> Mercuria Ace, Eria Tower Ace S</td>
+              </tr>
+              <tr>
+                <td><code>EHC-04</code></td>
+                <td>Air-to-Water Heat Pump (Split / Wall / Tower)</td>
+                <td><strong>De Dietrich</strong> Alezio S, Alezio S V200, Alezio S Compact · <strong>Remeha</strong> Eria Tower, Mercuria, Tzerra Hybrid · <strong>Baxi</strong> PBS-i 2, Platinum BC iPlus · <strong>Brötje</strong> BLW Split / Mono</td>
+              </tr>
+              <tr>
+                <td><code>EHC-05</code></td>
+                <td>Air-to-Water Heat Pump</td>
+                <td><strong>De Dietrich</strong> HPI-M, HPI-S · <strong>Baxi</strong> Platinum BC iMax · <strong>Brötje</strong> BLW Mono-P / Split-P</td>
+              </tr>
+              <tr>
+                <td><code>EHC-07</code> / <code>EHC-12</code> / <code>EHC-15</code></td>
+                <td>Hybrid Heat Pump (Split / Monobloc / All-in-One)</td>
+                <td><strong>Remeha</strong> Elga Ace H4/6, Elga Ace Monoblock, Elga Ace All-In-One · <strong>Baxi</strong> Luna Hybrid Alya H</td>
+              </tr>
+              <tr>
+                <td><code>EHC-09</code> / <code>EHC-10</code> / <code>EHC-11</code></td>
+                <td>R32 Monobloc &amp; Split Heat Pump</td>
+                <td><strong>De Dietrich</strong> Alezio M · <strong>Baxi</strong> Alya FS &amp; WH A, BC Mural iR32 · <strong>Brötje</strong> BLW Eco 10.1–16.1, BLW Mono P6.1–P9.1</td>
+              </tr>
+              <tr>
+                <td><code>EHC-14</code> / <code>EHC-16</code></td>
+                <td>R290 &amp; Commercial Monobloc Heat Pump</td>
+                <td><strong>Baxi</strong> Auriga HP / P, UIMB Monobloc 2, UIMB BAXI Connect+ · <strong>Remeha</strong> Effenca Control HT 20–30, Confida 10</td>
+              </tr>
+              <tr>
+                <td><code>CU-08</code> (<code>CU-GH08</code>)</td>
+                <td>Gas Condensing Boiler</td>
+                <td><strong>De Dietrich</strong> Evodens AMC / Pro, Innovens Pro MCA 160, Elidens C140 · <strong>Remeha</strong> Calenta Ace, Quinta Ace, Gas 120 Ace</td>
+              </tr>
+              <tr>
+                <td><code>CU-09</code> (<code>CU-GH09</code>)</td>
+                <td>Gas Condensing Boiler</td>
+                <td><strong>De Dietrich</strong> Naneo S, PMC-S · <strong>Remeha</strong> Tzerra Ace</td>
+              </tr>
+              <tr>
+                <td><code>CU-15</code> / <code>CU-16</code> / <code>CU-17</code> / <code>CU-21</code></td>
+                <td>Gas Condensing Boiler</td>
+                <td><strong>De Dietrich</strong> MPX2, MCR2, Miduens · <strong>Baxi</strong> Luna Compact / Classic / Style / Century, Platinum iPlus · <strong>Remeha</strong> Tzerra &amp; Calenta Ace-Matic · <strong>Brötje</strong> WGB.1, WBS.1, WBC</td>
+              </tr>
+              <tr>
+                <td><code>CU-06</code> / <code>CU-13</code> / <code>CU-20</code> / <code>CU-22</code></td>
+                <td>Commercial Gas Boiler</td>
+                <td><strong>De Dietrich</strong> C 340–640 · <strong>Remeha</strong> Gas 220 Ace, Gas 320 Ace, Quinta · <strong>Baxi</strong> Bios iPlus, Luna MP · <strong>Brötje</strong> WGB 50.1</td>
+              </tr>
+              <tr>
+                <td><code>CU-OH01</code> / <code>CU-OH02</code> / <code>CU-OH04</code></td>
+                <td>Oil Condensing Boiler</td>
+                <td><strong>De Dietrich</strong> Modulens O Pro, Neovo, Essencio · <strong>Baxi</strong> Argenta GT/GTI/GTA Condens · <strong>Brötje</strong> BOK 19–40 · <strong>Chappée</strong> Sempra Nova</td>
+              </tr>
+              <tr>
+                <td><code>CU-HW01</code></td>
+                <td>Thermodynamic DHW Water Heater</td>
+                <td><strong>De Dietrich</strong> Kaliko TWH · <strong>Baxi</strong> SPC Plus, BC ACS R290</td>
+              </tr>
+              <tr>
+                <td><code>CU-EB</code></td>
+                <td>Electrical Boiler</td>
+                <td><strong>BDR Thermea</strong> Electrical Heater Engine</td>
+              </tr>
+              <tr>
+                <td><code>EEC-01</code> / <code>SCB-*</code></td>
+                <td>Multi-Zone / Cascade / Solar Controller</td>
+                <td><strong>De Dietrich</strong> VM Diematic Evolution · <strong>Baxi</strong> Multi Zone Controller · <strong>Brötje</strong> IWR RMS-W · <strong>SCB-04 / 10 / 15 / 17</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="requirements">
+        <h2>Important Requirements &amp; BLE Pairing Guide</h2>
+
+        <div class="callout callout-warn">
+          <strong>Mandatory ESPHome BLE Settings:</strong>
+          <ul>
+            <li>Use the <strong><code>esp-idf</code></strong> framework (<code>framework: type: esp-idf</code>).</li>
+            <li>Set <strong><code>io_capability: keyboard_only</code></strong> under <code>esp32_ble:</code> so ESP-IDF can reply to the boiler's 6-digit Passkey Entry pairing prompt.</li>
+            <li><strong>Do NOT enable <code>bluetooth_proxy</code></strong> on the same ESP32 (when active, it suppresses local <code>ble_client</code> device discovery).</li>
+          </ul>
+        </div>
+
+        <h3>Initial BLE Pairing Procedure</h3>
+        <ol>
+          <li>On your boiler / heat pump control panel (HMI), activate <strong>Bluetooth pairing mode</strong> so the 6-digit PIN code is displayed on the boiler screen.</li>
+          <li>Add that 6-digit PIN to your ESPHome <code>secrets.yaml</code>:
+            <pre><code>strateo_ble_pin: 123456</code></pre>
+          </li>
+          <li>Flash the ESP32. Upon connecting, <code>bdr_ble</code> automatically bonds using your PIN, saves the LTK bond in ESP32 NVS flash, and unlocks Service 3 + CAN-BUS <code>RUB v2.01</code>.</li>
+          <li><strong>Coexistence with the Official Mobile App:</strong> Because the boiler accepts one BLE connection at a time, include the <code>ble_client</code> switch (<code>Boiler BLE Connect</code>) in your YAML. Turning it <strong>Off</strong> in Home Assistant disconnects the ESP32 so you can connect with the <em>De Dietrich PRO / Baxi / Remeha Service Tool</em> phone app whenever needed.</li>
+        </ol>
+      </section>
+
+      <section id="quick-start">
+        <h2>Quick Start YAML</h2>
+        <p>Add the external component to your ESPHome YAML configuration:</p>
+        <pre><code>external_components:
+  - source: github://d-lebed/esphome-bdr-ble@v1.0.0
+    components: [bdr_ble]
+
+esp32:
+  board: esp32-c6-devkitm-1
+  variant: esp32c6
+  framework:
+    type: esp-idf
+
+esp32_ble:
+  io_capability: keyboard_only
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+
+ble_client:
+  - mac_address: "00:A0:50:XX:XX:XX"
+    id: boiler_ble
+
+bdr_ble:
+  id: boiler_hub
+  ble_client_id: boiler_ble
+  pin: !secret strateo_ble_pin
+  node_id: 1
+  auth_level: 4
+
+switch:
+  - platform: ble_client
+    ble_client_id: boiler_ble
+    name: "Boiler BLE Connect"
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+
+text_sensor:
+  - platform: bdr_ble
+    status:
+      name: "Boiler BLE Status"</code></pre>
+      </section>
+
+      <section id="discovery-workflow">
+        <h2>3-Step Workflow: Discover All Supported Sensors for Your Boiler</h2>
+        <p>
+          Because BDR Thermea's Object Dictionary contains <strong>3,092 datapoints</strong> across dozens of appliance types, each boiler only implements the subset matching its installed hardware. Follow this 3-step workflow to configure your exact appliance:
+        </p>
+
+        <h3>Step 1: Flash the Minimal Config &amp; Capture <code>BDR_SNAPSHOT</code></h3>
+        <p>
+          Flash the Quick Start configuration above (with no sensors yet) and open the ESPHome logs. Right after authenticating, <code>bdr_ble</code> reads the boiler's internal menu descriptor table (<code>0x502B:01..15</code>) and prints <code>BDR_SNAPSHOT:</code> lines:
+        </p>
+        <pre><code>[I][bdr_ble:425]: === Appliance Snapshot (370 supported datapoints from 0x502B:01..15) ===
+[I][bdr_ble:439]: BDR_SNAPSHOT:3011:00,3012:00,3013:00,3654:01,3655:01,3661:01,...
+[I][bdr_ble:439]: BDR_SNAPSHOT:5013:00,5016:00,501A:00,501E:00,5044:00,5045:00,...
+[I][bdr_ble:448]: === End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===</code></pre>
+
+        <h3>Step 2: Paste the Snapshot into the Interactive YAML Configurator</h3>
+        <ol>
+          <li>Open the <strong><a href="./configurator.html">Interactive ESPHome YAML Configurator</a></strong>.</li>
+          <li>Paste the raw <code>BDR_SNAPSHOT:...</code> log lines into the <strong>Paste BDR_SNAPSHOT:... lines from ESPHome logs</strong> box.</li>
+          <li>The table immediately filters to the exact parameters, live measurements (<code>Signal</code>), and counters (<code>Counter</code>) reported by your boiler.</li>
+          <li>Select the items you want, choose their polling interval (<code>10s</code>, <code>30s</code>, <code>60s</code>), and copy the generated <code>sensor:</code>, <code>text_sensor:</code>, <code>number:</code>, and <code>select:</code> YAML blocks.</li>
+        </ol>
+
+        <h3>Step 3: Add Any Extra Internal Counters (Protected by <code>Auto-Skip</code>)</h3>
+        <p>
+          Some internal CANopen datapoints (such as aggregate total energy delivery <code>varApTotalEnergyDelivery</code> <code>0x5089:00</code>) are supported by the boiler even if they don't appear on the front-panel menu. You can browse all datapoints for your board model in the <a href="./configurator.html">Configurator</a> and add them freely — if any datapoint is unsupported, <code>bdr_ble</code> logs a single warning and automatically disables polling for it (<code>Auto-Skip</code>).
+        </p>
+      </section>
+
+      <section id="configuration">
+        <h2>Configuration Reference</h2>
+
+        <h3>1. Hub (<code>bdr_ble</code>)</h3>
+        <pre><code>bdr_ble:
+  id: boiler_hub
+  ble_client_id: boiler_ble       # Required: ID of the ble_client entry
+  pin: !secret strateo_ble_pin    # Optional: 6-digit BLE pairing passkey (0..999999)
+  node_id: 1                      # Optional: Default CANopen Node ID (default: 1 = main Control Unit)
+  auth_level: 4                   # Optional: TEA authorization level (default: 4 = Service/Installer)</code></pre>
+
+        <h3>2. Numeric Sensors (<code>sensor</code>)</h3>
+        <p>
+          Supports both <strong>grouped batch syntax</strong> (<code>sensors: [...]</code>) and single sensor syntax. All datapoints sharing the same <code>update_interval</code> are automatically batched into <code>GetListRequest (0x08)</code> reads.
+        </p>
+        <pre><code>sensor:
+  # Fast group (polled every 10s in a single GetListRequest batch)
+  - platform: bdr_ble
+    update_interval: 10s
+    sensors:
+      - parameter: AM027
+        name: "Strateo Outside Temperature"
+      - parameter: AM016
+        name: "Strateo Flow Temperature"
+      - parameter: BM000
+        name: "Strateo DHW Temperature"
+      - parameter: AM019
+        name: "Strateo Water Pressure"
+
+  # Slow group (polled every 60s in a single GetListRequest batch)
+  - platform: bdr_ble
+    update_interval: 60s
+    sensors:
+      - parameter: AC005
+        name: "Strateo Energy CH Consumption"
+      - parameter: AC006
+        name: "Strateo Energy DHW Consumption"
+      - parameter: AC018
+        name: "Strateo Energy Backup Consumption"
+      - parameter: AC008
+        name: "Strateo Thermal Energy CH Delivery"
+      - parameter: AC009
+        name: "Strateo Thermal Energy DHW Delivery"
+      - parameter: varApTotalEnergyDelivery
+        name: "Strateo Total Thermal Energy Delivered"</code></pre>
+
+        <h3>3. Text Sensors (<code>text_sensor</code>)</h3>
+        <p>
+          Provides the <code>status</code> diagnostic sensor and decoded <code>Enum</code>, <code>VisibleString</code>, <code>OctetString</code>, and <code>TimeOfDay</code> datapoints:
+        </p>
+        <pre><code>text_sensor:
+  - platform: bdr_ble
+    status:
+      name: "Strateo BLE Status"
+
+  - platform: bdr_ble
+    update_interval: 30s
+    sensors:
+      - parameter: AM012
+        name: "Strateo Appliance Status"
+      - parameter: AM014
+        name: "Strateo Appliance Sub-Status"</code></pre>
+      </section>
+
+      <section id="writable-parameters">
+        <h2>Editing Boiler &amp; Heat Pump Parameters (<code>number</code> &amp; <code>select</code>)</h2>
+
+        <h3>4. Writable Numeric Parameters (<code>number</code>)</h3>
+        <p>
+          Supports editing writable numeric parameters (<code>U8</code>, <code>I8</code>, <code>U16</code>, <code>I16</code>, <code>U32</code>, <code>I32</code>, such as DHW comfort/eco setpoints, heating curve slopes, or zone flow setpoints). When the boiler connects and reports its <code>0x502B</code> descriptors, <code>bdr_ble</code> dynamically updates each <code>number</code> entity's <code>min_value</code>, <code>max_value</code>, and <code>step</code> to the exact hardware limits of your boiler.
+        </p>
+        <pre><code>number:
+  - platform: bdr_ble
+    update_interval: 30s
+    numbers:
+      - parameter: DP070
+        name: "Strateo DHW Comfort Setpoint"
+      - parameter: DP080
+        name: "Strateo DHW Eco Setpoint"
+      - parameter: CP010
+        name: "Zone 1 Flow Temperature Setpoint"</code></pre>
+
+        <h3>5. Writable Enum Parameters (<code>select</code>)</h3>
+        <p>
+          Supports editing enumerated parameters (such as DHW operating mode or heating zone mode). Dropdown options are populated automatically at compile time from <code>obd_catalog.json</code>.
+        </p>
+        <pre><code>select:
+  - platform: bdr_ble
+    update_interval: 30s
+    selects:
+      - parameter: DP200
+        name: "Strateo DHW Operating Mode"
+      - parameter: CP320
+        name: "Zone 1 Operating Mode"</code></pre>
+      </section>
+
+      <section id="faq">
+        <h2>Frequently Asked Questions (FAQ)</h2>
+
+        <div class="faq-item">
+          <h3>Can I use Bluetooth (<code>bdr_ble</code>) at the same time as an OpenTherm or R-Bus thermostat?</h3>
+          <p>
+            <strong>Yes!</strong> Because <code>bdr_ble</code> communicates wirelessly over the boiler's built-in Bluetooth Low Energy interface, your physical <code>R-Bus</code> / <code>OpenTherm</code> / <code>L-Bus</code> terminals remain untouched. You can keep an ESPHome OpenTherm shield or physical room thermostat connected on the wired bus while using <code>bdr_ble</code> to read energy counters, water pressure, DHW tank temperature, and edit installer parameters.
+          </p>
+        </div>
+
+        <div class="faq-item">
+          <h3>Do I need a BDR Thermea GTW-08 gateway, SMART TC, or extra hardware?</h3>
+          <p>
+            <strong>No.</strong> Any standard ESP32 board (such as <code>ESP32-C6</code>, <code>ESP32-S3</code>, or <code>ESP32-WROOM</code>) placed near the boiler connects directly to the built-in BLE module — the same interface used by installers with the <em>De Dietrich PRO</em> / <em>Baxi</em> / <em>Remeha Service Tool</em> smartphone app.
+          </p>
+        </div>
+
+        <div class="faq-item">
+          <h3>How do I find my boiler's Bluetooth MAC address?</h3>
+          <p>
+            Enable <code>esp32_ble_tracker:</code> in ESPHome or check any Bluetooth scanner app while near the boiler. BDR Thermea appliances advertise with a name starting with the controller board code followed by the serial number (for example <code>EHC-08_...</code> or <code>CU-GH08_...</code>) and manufacturer data <code>"BDR"</code> (<code>0x42 0x44 0x52</code>), typically with a MAC prefix <code>00:A0:50:XX:XX:XX</code>.
+          </p>
+        </div>
+      </section>
+
+      <section id="protocol">
+        <h2>Protocol Specification &amp; Links</h2>
+        <ul>
+          <li><strong><a href="./configurator.html">Interactive ESPHome YAML Configurator</a></strong> — Filter all 3,092 datapoints by boiler board model, Function Group, or <code>BDR_SNAPSHOT</code> log.</li>
+          <li><strong><a href="https://github.com/d-lebed/esphome-bdr-ble/blob/main/docs/PROTOCOL_SPECIFICATION.md">BDR Thermea / De Dietrich BLE Protocol Specification</a></strong> — Full reverse-engineered documentation of GATT services, Service 3 &amp; <code>RUB v2.01</code> 32-round TEA authentication, <code>DirectChannel</code> CRC-16/MODBUS framing, <code>GetListRequest (0x08)</code>, <code>WriteConfirmedRequest (0x04)</code>, and <code>0x502B</code> descriptors.</li>
+          <li><strong><a href="https://github.com/d-lebed/esphome-bdr-ble/blob/main/example.yaml">Complete <code>example.yaml</code></a></strong> — Ready-to-use ESPHome configuration example.</li>
+          <li><strong><a href="https://github.com/d-lebed/esphome-bdr-ble/releases">Releases &amp; Changelog</a></strong></li>
+        </ul>
+      </section>
+
+      <section id="disclaimer">
+        <h2>Disclaimer, Assumption of Risk &amp; Legal Notice</h2>
+        <div class="callout callout-warn">
+          <strong>PLEASE READ CAREFULLY BEFORE USING THIS SOFTWARE:</strong>
+          <p style="margin: 6px 0 0;">
+            Heating appliances, boilers, and heat pumps are high-power thermal, hydraulic, electrical, and/or gas-fired systems. Improper configuration or unauthorized third-party connections can cause severe equipment damage, water/frost damage, scalding, safety hazards, and <strong>immediate loss of manufacturer and installer warranty</strong>.
+          </p>
+        </div>
+        <ul>
+          <li><strong>Tested on One Model Only:</strong> All reverse-engineering and testing were performed exclusively on a single <strong>De Dietrich Strateo R32 (<code>EHC-08</code>)</strong> heat pump owned by the author. No other boiler or heat pump model has been tested.</li>
+          <li><strong>Risk of Voiding Warranty:</strong> Connecting third-party hardware/software or authenticating with service/installer privileges (<code>auth_level: 4</code>) may be logged by the appliance controller and <strong>may void your manufacturer or installer warranty</strong>.</li>
+          <li><strong>Parameter Writing Hazard:</strong> Writing parameters (via <code>number:</code> or <code>select:</code>) modifies internal controller settings in non-volatile memory (EEPROM/Flash). Writing invalid values or writing parameters too frequently from automations can wear out controller memory or cause dangerous operating conditions.</li>
+          <li><strong>No Warranty &amp; Complete Limitation of Liability:</strong> This software and documentation are provided <strong>"AS IS"</strong> and <strong>"AS AVAILABLE"</strong>, without warranty of any kind, express or implied. In no event shall the author or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, without limitation, damage to heating equipment, property damage, personal injury, loss of heating/hot water, or loss of warranty) arising in any way out of the use of this software, even if advised of the possibility of such damage. <strong>You use this project entirely at your own risk.</strong></li>
+          <li><strong>No Affiliation:</strong> This project is an independent interoperability effort and is <strong>not</strong> affiliated with, endorsed by, sponsored by, or authorized by <strong>BDR Thermea Group B.V.</strong>, <strong>De Dietrich Thermique</strong>, <strong>Baxi</strong>, <strong>Remeha</strong>, <strong>August Brötje GmbH</strong>, <strong>Chappée</strong>, or <strong>Oertli</strong>. All product and brand names are trademarks of their respective owners and are used strictly for descriptive identification purposes (<em>nominative fair use</em>).</li>
+          <li><strong>Right to Interoperability:</strong> Published under Directive 2009/24/EC of the European Parliament and of the Council (right to study and reverse-engineer protocols for interoperability), Article 75 of the Polish Copyright Act, and CJEU Case C-406/10. All C++, Python, and HTML/JS code in this repository is original and licensed under the <a href="https://github.com/d-lebed/esphome-bdr-ble/blob/main/LICENSE">Apache License 2.0</a>.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <p>
+      <strong>esphome-bdr-ble</strong> · Open-Source ESPHome Component for BDR Thermea / De Dietrich / Baxi / Remeha BLE Appliances ·
+      <a href="./configurator.html">YAML Configurator</a> ·
+      <a href="https://github.com/d-lebed/esphome-bdr-ble">GitHub Repository</a>
+    </p>
+  </footer>
+
 </body>
 </html>

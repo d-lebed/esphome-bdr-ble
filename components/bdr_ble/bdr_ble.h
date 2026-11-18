@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esphome/core/defines.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
@@ -27,75 +28,9 @@
 #include <string>
 #include <vector>
 
-namespace esphome {
-namespace bdr_ble {
+#include "bdr_protocol.h"
 
-class BdrBleComponent;
-
-enum BdrDataType : uint8_t {
-  BDR_TYPE_U8 = 0,
-  BDR_TYPE_I8 = 1,
-  BDR_TYPE_U16 = 2,
-  BDR_TYPE_I16 = 3,
-  BDR_TYPE_U32 = 4,
-  BDR_TYPE_I32 = 5,
-  BDR_TYPE_ENUM = 6,
-  BDR_TYPE_VISIBLE_STRING = 7,
-  BDR_TYPE_OCTET_STRING = 8,
-  BDR_TYPE_TIME_OF_DAY = 9,
-};
-
-#ifdef USE_NUMBER
-class BdrBleNumber : public number::Number {
- public:
-  void set_parent(BdrBleComponent *parent) { this->parent_ = parent; }
-  void set_datapoint_meta(uint8_t node_id, uint16_t index, uint8_t sub_index,
-                          BdrDataType data_type, float scale) {
-    this->node_id_ = node_id;
-    this->index_ = index;
-    this->sub_index_ = sub_index;
-    this->data_type_ = data_type;
-    this->scale_ = scale;
-  }
-
- protected:
-  void control(float value) override;
-
-  BdrBleComponent *parent_{nullptr};
-  uint8_t node_id_{0x01};
-  uint16_t index_{0};
-  uint8_t sub_index_{0};
-  BdrDataType data_type_{BDR_TYPE_U16};
-  float scale_{1.0f};
-};
-#endif
-
-#ifdef USE_SELECT
-class BdrBleSelect : public select::Select {
- public:
-  void set_parent(BdrBleComponent *parent) { this->parent_ = parent; }
-  void set_datapoint_meta(uint8_t node_id, uint16_t index, uint8_t sub_index) {
-    this->node_id_ = node_id;
-    this->index_ = index;
-    this->sub_index_ = sub_index;
-  }
-  void add_enum_option(int raw_value, const char *label) {
-    this->val_to_label_[raw_value] = label;
-    this->label_to_val_[label] = raw_value;
-  }
-  void publish_from_raw(int raw_value);
-
- protected:
-  void control(const std::string &value) override;
-
-  BdrBleComponent *parent_{nullptr};
-  uint8_t node_id_{0x01};
-  uint16_t index_{0};
-  uint8_t sub_index_{0};
-  std::map<int, std::string> val_to_label_;
-  std::map<std::string, int> label_to_val_;
-};
-#endif
+namespace esphome::bdr_ble {
 
 struct PendingWrite {
   uint8_t node_id{0x01};
@@ -118,10 +53,10 @@ struct DatapointRegistration {
   std::vector<text_sensor::TextSensor *> text_sensors;
 #endif
 #ifdef USE_NUMBER
-  std::vector<BdrBleNumber *> numbers;
+  std::vector<number::Number *> numbers;
 #endif
 #ifdef USE_SELECT
-  std::vector<BdrBleSelect *> selects;
+  std::vector<select::Select *> selects;
 #endif
 };
 
@@ -139,6 +74,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   float get_setup_priority() const override { return setup_priority::AFTER_BLUETOOTH; }
 
   void set_default_node_id(uint8_t node_id) { this->default_node_id_ = node_id; }
+  uint8_t get_default_node_id() const { return this->default_node_id_; }
   void set_auth_level(uint8_t auth_level) { this->auth_level_ = auth_level; }
   void set_pin(uint32_t pin) {
     this->pin_ = pin;
@@ -156,18 +92,21 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void register_text_sensor(text_sensor::TextSensor *sens, uint16_t index, uint8_t sub_index,
                             uint8_t data_type, uint32_t interval_ms,
                             uint8_t node_id = 0xFF);
+#endif
+
+#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
   void register_enum_translation(uint16_t index, uint8_t sub_index, int value,
                                  const char *description);
 #endif
 
 #ifdef USE_NUMBER
-  void register_number(BdrBleNumber *num, uint16_t index, uint8_t sub_index,
+  void register_number(number::Number *num, uint16_t index, uint8_t sub_index,
                        uint8_t data_type, float scale, uint32_t interval_ms,
                        uint8_t node_id = 0xFF);
 #endif
 
 #ifdef USE_SELECT
-  void register_select(BdrBleSelect *sel, uint16_t index, uint8_t sub_index,
+  void register_select(select::Select *sel, uint16_t index, uint8_t sub_index,
                        uint32_t interval_ms, uint8_t node_id = 0xFF);
 #endif
 
@@ -200,10 +139,6 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void log_rx_hex_(const char *prefix, const uint8_t *data, uint16_t len,
                    bool info_level = false);
 
-  static uint16_t crc16_ccitt_(const uint8_t *data, size_t len);
-  static void tea_encrypt_(uint8_t auth_level, uint32_t v0, uint32_t v1,
-                           uint32_t &out_v0, uint32_t &out_v1);
-
   void write_cccd_(uint16_t cccd_handle);
   void send_zero_length_write_(uint16_t char_handle);
   void send_direct_channel_(const uint8_t *payload, size_t len);
@@ -214,6 +149,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                             const std::vector<size_t> &item_indices,
                             bool use_v200_header);
 
+  // Implemented in bdr_ble_parser.cpp
   void handle_notify_(uint16_t handle, const uint8_t *data, uint16_t len);
   void handle_direct_segment_(const uint8_t *data, uint16_t len);
   void handle_direct_payload_(const uint8_t *payload, size_t len);
@@ -244,6 +180,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   int active_group_idx_{-1};
   size_t active_item_idx_{0};
   bool waiting_response_{false};
+  bool waiting_for_get_list_{false};
   uint32_t last_req_ms_{0};
   uint8_t get_list_stage_{0};  // 0=try 02 01..03, 1=try 02 00..00, 2=confirmed, 3=fallback to pipelined 0x00
   uint16_t negotiated_mtu_{23};
@@ -252,9 +189,10 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
 
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *status_text_{nullptr};
+#endif
+#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
   std::map<uint64_t, std::string> enum_translations_;
 #endif
 };
 
-}  // namespace bdr_ble
-}  // namespace esphome
+}  // namespace esphome::bdr_ble

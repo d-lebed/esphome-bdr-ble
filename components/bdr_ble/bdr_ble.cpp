@@ -1,5 +1,5 @@
 #include "bdr_ble.h"
-#include <cmath>
+
 #include <cstdio>
 #include <cstring>
 
@@ -7,25 +7,7 @@ extern "C" void BTA_GATTC_WriteCharValue(uint16_t conn_id, uint16_t handle,
                                          uint8_t write_type, uint16_t len,
                                          uint8_t *p_value, uint8_t auth_req);
 
-namespace esphome {
-namespace bdr_ble {
-
-static const char *const TAG = "bdr_ble";
-
-// Fixed GATT Attribute Handles on CU-GH08 / EHC-08 / MK3 BLE Module
-static constexpr uint16_t HANDLE_DIRECT_TX = 18;      // 496b1b03 (Write)
-static constexpr uint16_t HANDLE_DIRECT_RX = 20;      // ab9af948 (Notify)
-static constexpr uint16_t HANDLE_DIRECT_RX_CCCD = 21;
-static constexpr uint16_t HANDLE_SVC2_CH1 = 23;       // 0c66c55b (Notify)
-static constexpr uint16_t HANDLE_SVC2_CH1_CCCD = 24;
-static constexpr uint16_t HANDLE_SVC2_CH2 = 27;       // de00707b (Notify)
-static constexpr uint16_t HANDLE_SVC2_CH2_CCCD = 28;
-static constexpr uint16_t HANDLE_SVC3_TRIG = 31;      // 94e54dc4 (Write 0 bytes)
-static constexpr uint16_t HANDLE_SVC3_CHAL = 33;      // 69092300 (Notify 8 bytes)
-static constexpr uint16_t HANDLE_SVC3_CHAL_CCCD = 34;
-static constexpr uint16_t HANDLE_SVC3_RESP = 36;      // f1ca5aeb (Write 9 bytes)
-static constexpr uint16_t HANDLE_SVC3_ACK = 38;       // e2c47825 (Notify 1 byte)
-static constexpr uint16_t HANDLE_SVC3_ACK_CCCD = 39;
+namespace esphome::bdr_ble {
 
 void BdrBleComponent::setup() {
   ESP_LOGI(TAG, "BDR Thermea BLE component initialized (%zu poll groups)",
@@ -104,7 +86,9 @@ void BdrBleComponent::register_text_sensor(text_sensor::TextSensor *sens,
       static_cast<BdrDataType>(data_type), 1.0f);
   dp.text_sensors.push_back(sens);
 }
+#endif
 
+#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
 void BdrBleComponent::register_enum_translation(uint16_t index,
                                                 uint8_t sub_index, int value,
                                                 const char *description) {
@@ -116,88 +100,23 @@ void BdrBleComponent::register_enum_translation(uint16_t index,
 #endif
 
 #ifdef USE_NUMBER
-void BdrBleNumber::control(float value) {
-  if (this->parent_ == nullptr) {
-    return;
-  }
-  float eff_scale = (this->scale_ > 0.0f) ? this->scale_ : 1.0f;
-  int64_t raw = static_cast<int64_t>(std::llround(value / eff_scale));
-  std::vector<uint8_t> bytes;
-
-  switch (this->data_type_) {
-    case BDR_TYPE_U8:
-    case BDR_TYPE_I8:
-    case BDR_TYPE_ENUM:
-      bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
-      break;
-    case BDR_TYPE_U16:
-    case BDR_TYPE_I16:
-      bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
-      bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
-      break;
-    case BDR_TYPE_U32:
-    case BDR_TYPE_I32:
-      bytes.push_back(static_cast<uint8_t>(raw & 0xFF));
-      bytes.push_back(static_cast<uint8_t>((raw >> 8) & 0xFF));
-      bytes.push_back(static_cast<uint8_t>((raw >> 16) & 0xFF));
-      bytes.push_back(static_cast<uint8_t>((raw >> 24) & 0xFF));
-      break;
-    default:
-      return;
-  }
-
-  this->publish_state(value);
-  this->parent_->queue_write_datapoint(this->node_id_, this->index_,
-                                       this->sub_index_, bytes);
-}
-
-void BdrBleComponent::register_number(BdrBleNumber *num, uint16_t index,
+void BdrBleComponent::register_number(number::Number *num, uint16_t index,
                                       uint8_t sub_index, uint8_t data_type,
                                       float scale, uint32_t interval_ms,
                                       uint8_t node_id) {
-  uint8_t resolved_node = (node_id == 0xFF) ? this->default_node_id_ : node_id;
-  BdrDataType dt = static_cast<BdrDataType>(data_type);
-  num->set_parent(this);
-  num->set_datapoint_meta(resolved_node, index, sub_index, dt, scale);
-  auto &dp = this->get_or_create_datapoint_(interval_ms, resolved_node, index,
-                                            sub_index, dt, scale);
+  auto &dp = this->get_or_create_datapoint_(
+      interval_ms, node_id, index, sub_index,
+      static_cast<BdrDataType>(data_type), scale);
   dp.numbers.push_back(num);
 }
 #endif
 
 #ifdef USE_SELECT
-void BdrBleSelect::publish_from_raw(int raw_value) {
-  auto it = this->val_to_label_.find(raw_value);
-  if (it != this->val_to_label_.end()) {
-    this->publish_state(it->second);
-  }
-}
-
-void BdrBleSelect::control(const std::string &value) {
-  if (this->parent_ == nullptr) {
-    return;
-  }
-  auto it = this->label_to_val_.find(value);
-  if (it == this->label_to_val_.end()) {
-    ESP_LOGW(TAG, "Unknown select option '%s' for 0x%04X:%02X", value.c_str(),
-             this->index_, this->sub_index_);
-    return;
-  }
-  int raw_val = it->second;
-  std::vector<uint8_t> bytes = {static_cast<uint8_t>(raw_val & 0xFF)};
-  this->publish_state(value);
-  this->parent_->queue_write_datapoint(this->node_id_, this->index_,
-                                       this->sub_index_, bytes);
-}
-
-void BdrBleComponent::register_select(BdrBleSelect *sel, uint16_t index,
+void BdrBleComponent::register_select(select::Select *sel, uint16_t index,
                                       uint8_t sub_index, uint32_t interval_ms,
                                       uint8_t node_id) {
-  uint8_t resolved_node = (node_id == 0xFF) ? this->default_node_id_ : node_id;
-  sel->set_parent(this);
-  sel->set_datapoint_meta(resolved_node, index, sub_index);
   auto &dp = this->get_or_create_datapoint_(
-      interval_ms, resolved_node, index, sub_index, BDR_TYPE_ENUM, 1.0f);
+      interval_ms, node_id, index, sub_index, BDR_TYPE_ENUM, 1.0f);
   dp.selects.push_back(sel);
 }
 #endif
@@ -205,7 +124,6 @@ void BdrBleComponent::register_select(BdrBleSelect *sel, uint16_t index,
 void BdrBleComponent::queue_write_datapoint(uint8_t node_id, uint16_t index,
                                             uint8_t sub_index,
                                             const std::vector<uint8_t> &data) {
-  // Replace any queued write for the same (node_id, index, sub_index)
   for (auto &w : this->write_queue_) {
     if (w.node_id == node_id && w.index == index && w.sub_index == sub_index) {
       w.data = data;
@@ -247,42 +165,6 @@ void BdrBleComponent::log_rx_hex_(const char *prefix, const uint8_t *data,
   }
 }
 
-uint16_t BdrBleComponent::crc16_ccitt_(const uint8_t *data, size_t len) {
-  uint16_t crc = 0xFFFF;
-  for (size_t i = 0; i < len; i++) {
-    crc ^= data[i];
-    for (int b = 0; b < 8; b++) {
-      if (crc & 1) {
-        crc = static_cast<uint16_t>((crc >> 1) ^ 0xA001);
-      } else {
-        crc = static_cast<uint16_t>(crc >> 1);
-      }
-    }
-  }
-  return crc;
-}
-
-void BdrBleComponent::tea_encrypt_(uint8_t auth_level, uint32_t id1,
-                                   uint32_t id2, uint32_t &out_v0,
-                                   uint32_t &out_v1) {
-  uint32_t v0 = auth_level;
-  uint32_t v1 = auth_level;
-  const uint32_t k0 = 0x15EFA43Fu;
-  const uint32_t k1 = id1;
-  const uint32_t k2 = id2;
-  const uint32_t k3 = auth_level;
-  const uint32_t delta = 0x9E3779B9u;
-  uint32_t sum = 0;
-
-  for (int i = 0; i < 32; i++) {
-    sum += delta;
-    v0 += (((v1 << 4) + k0) ^ (v1 + sum)) ^ ((v1 >> 5) + k1);
-    v1 += (((v0 << 4) + k2) ^ (v0 + sum)) ^ ((v0 >> 5) + k3);
-  }
-  out_v0 = v0;
-  out_v1 = v1;
-}
-
 void BdrBleComponent::write_cccd_(uint16_t cccd_handle) {
   if (this->parent() == nullptr) {
     return;
@@ -312,12 +194,7 @@ void BdrBleComponent::send_direct_channel_(const uint8_t *payload, size_t len) {
   if (this->parent() == nullptr || len == 0 || len > 512) {
     return;
   }
-  std::vector<uint8_t> frame(len + 3);
-  frame[0] = 0x01;  // Channel 1 (CAN / RUB)
-  std::memcpy(&frame[1], payload, len);
-  uint16_t crc = crc16_ccitt_(frame.data(), len + 1);
-  frame[1 + len] = static_cast<uint8_t>((crc >> 8) & 0xFF);
-  frame[2 + len] = static_cast<uint8_t>(crc & 0xFF);
+  std::vector<uint8_t> frame = wrap_direct_channel_frame(payload, len);
 
   // Max payload per ATT write is (MTU - 3), minus 1 byte for segment header
   size_t max_att_len = (this->negotiated_mtu_ > 23)
@@ -336,7 +213,7 @@ void BdrBleComponent::send_direct_channel_(const uint8_t *payload, size_t len) {
     size_t chunk_len = is_last ? rem : max_chunk_data;
 
     uint8_t pkt[248];
-    pkt[0] = is_last ? 0xFF : seg_idx++;
+    pkt[0] = is_last ? SEGMENT_FINAL : seg_idx++;
     std::memcpy(&pkt[1], frame.data() + offset, chunk_len);
     esp_ble_gattc_write_char(this->parent()->get_gattc_if(),
                              this->parent()->get_conn_id(), HANDLE_DIRECT_TX,
@@ -352,8 +229,8 @@ void BdrBleComponent::send_read_param_(uint8_t node_id, uint16_t index,
       0x02,
       0x01,
       0x00,
-      0x00,
-      0x00,  // Function 0x00 = Read Request
+      MSG_TYPE_SDO,
+      FUNC_READ_REQ,
       0x03,
       node_id,
       static_cast<uint8_t>((index >> 8) & 0xFF),
@@ -373,8 +250,8 @@ void BdrBleComponent::send_write_param_(uint8_t node_id, uint16_t index,
   req[0] = 0x02;
   req[1] = 0x01;
   req[2] = 0x00;
-  req[3] = 0x00;
-  req[4] = 0x04;  // Function 0x04 = Write Confirmed Request
+  req[3] = MSG_TYPE_SDO;
+  req[4] = FUNC_WRITE_CONFIRMED_REQ;
   req[5] = 0x03;
   req[6] = node_id;
   req[7] = static_cast<uint8_t>((index >> 8) & 0xFF);
@@ -397,8 +274,8 @@ void BdrBleComponent::send_get_list_batch_(
   req[0] = 0x02;
   req[1] = use_v200_header ? 0x00 : 0x01;
   req[2] = 0x00;
-  req[3] = 0x00;
-  req[4] = 0x08;  // Function 0x08 = GetListRequest
+  req[3] = MSG_TYPE_SDO;
+  req[4] = FUNC_GET_LIST_REQ;
   req[5] = use_v200_header ? 0x00 : 0x03;
   req[6] = static_cast<uint8_t>(count);
 
@@ -427,6 +304,7 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->retry_count_ = 0;
         this->active_group_idx_ = -1;
         this->waiting_response_ = false;
+        this->waiting_for_get_list_ = false;
         this->get_list_stage_ = 0;
         this->negotiated_mtu_ = 23;
         this->rx_reassembly_buf_.clear();
@@ -455,12 +333,12 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
       this->state_ = STATE_DISCONNECTED;
       this->active_group_idx_ = -1;
       this->waiting_response_ = false;
+      this->waiting_for_get_list_ = false;
       this->rx_reassembly_buf_.clear();
       this->publish_status_("Disconnected");
       break;
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      // Register notifications BEFORE setting node_state = ESTABLISHED
       static const uint16_t NOTIFY_HANDLES[5] = {
           HANDLE_SVC3_CHAL, HANDLE_SVC3_ACK, HANDLE_DIRECT_RX, HANDLE_SVC2_CH1,
           HANDLE_SVC2_CH2};
@@ -520,7 +398,6 @@ void BdrBleComponent::loop() {
   const uint32_t now = millis();
 
   if (this->state_ == STATE_CONNECTED_WAIT_SEC) {
-    // Fallback if link was already encrypted without firing AUTH_CMPL
     if (now - this->last_action_ms_ > 10000) {
       this->state_ = STATE_SUBSCRIBING;
       this->cccd_step_ = 0;
@@ -558,7 +435,8 @@ void BdrBleComponent::loop() {
         this->send_zero_length_write_(HANDLE_SVC3_TRIG);
       } else {
         this->publish_status_("Unlocking CAN-BUS (RUB v2.01)");
-        const uint8_t rub_chal_req[6] = {0x02, 0x01, 0x00, 0x02, 0x00, 0x03};
+        const uint8_t rub_chal_req[6] = {
+            0x02, 0x01, 0x00, MSG_TYPE_RUB_AUTH, RUB_FUNC_CHALLENGE_REQ, 0x03};
         this->send_direct_channel_(rub_chal_req, sizeof(rub_chal_req));
         this->state_ = STATE_RUB_WAIT_CHALLENGE;
         this->retry_count_ = 0;
@@ -571,7 +449,8 @@ void BdrBleComponent::loop() {
     if (now - this->last_action_ms_ > 3000 && this->retry_count_ < 3) {
       this->last_action_ms_ = now;
       this->retry_count_++;
-      const uint8_t rub_chal_req[6] = {0x02, 0x01, 0x00, 0x02, 0x00, 0x03};
+      const uint8_t rub_chal_req[6] = {
+          0x02, 0x01, 0x00, MSG_TYPE_RUB_AUTH, RUB_FUNC_CHALLENGE_REQ, 0x03};
       this->send_direct_channel_(rub_chal_req, sizeof(rub_chal_req));
     }
     return;
@@ -585,8 +464,8 @@ void BdrBleComponent::loop() {
       this->snapshot_sub_idx_++;
     }
     if (!this->waiting_response_ && (now - this->last_action_ms_ >= 60)) {
-      if (this->snapshot_sub_idx_ <= 15) {
-        this->send_read_param_(this->default_node_id_, 0x502B,
+      if (this->snapshot_sub_idx_ <= SNAPSHOT_MAX_SUB_INDEX) {
+        this->send_read_param_(this->default_node_id_, INDEX_AP_MENU_DESCRIPTOR,
                                this->snapshot_sub_idx_);
         this->waiting_response_ = true;
         this->last_req_ms_ = now;
@@ -610,17 +489,21 @@ void BdrBleComponent::loop() {
     // Check if an active request timed out
     if (this->waiting_response_ && (now - this->last_req_ms_ >= 800)) {
       this->waiting_response_ = false;
-      if (this->active_group_idx_ >= 0 && this->get_list_stage_ < 2) {
+      if (this->waiting_for_get_list_ && this->active_group_idx_ >= 0 &&
+          this->get_list_stage_ < 2) {
+        this->waiting_for_get_list_ = false;
         this->get_list_stage_++;
         if (this->get_list_stage_ == 1) {
           ESP_LOGI(TAG, "GetListRequest v2.01 timed out; trying v2.00 header");
           this->active_item_idx_ = 0;
         } else {
-          ESP_LOGI(TAG, "GetListRequest not supported over DirectChannel; using fast pipelined burst polling");
+          ESP_LOGI(TAG,
+                   "GetListRequest not supported over DirectChannel; using fast pipelined burst polling");
           this->get_list_stage_ = 3;
           this->active_item_idx_ = 0;
         }
       }
+      this->waiting_for_get_list_ = false;
     }
 
     // Priority 1: Execute any queued parameter writes immediately
@@ -631,6 +514,7 @@ void BdrBleComponent::loop() {
       this->send_write_param_(pw.node_id, pw.index, pw.sub_index,
                               pw.data.data(), pw.data.size());
       this->waiting_response_ = true;
+      this->waiting_for_get_list_ = false;
       this->last_req_ms_ = now;
       this->last_action_ms_ = now;
       return;
@@ -687,12 +571,14 @@ void BdrBleComponent::loop() {
           bool use_v200 = (this->get_list_stage_ == 1);
           this->send_get_list_batch_(grp, batch_indices, use_v200);
           this->waiting_response_ = true;
+          this->waiting_for_get_list_ = true;
           this->last_req_ms_ = now;
           this->last_action_ms_ = now;
         } else if (!batch_indices.empty()) {
           const auto &dp = grp.items[batch_indices[0]];
           this->send_read_param_(dp.node_id, dp.index, dp.sub_index);
           this->waiting_response_ = true;
+          this->waiting_for_get_list_ = false;
           this->last_req_ms_ = now;
           this->last_action_ms_ = now;
         }
@@ -703,611 +589,4 @@ void BdrBleComponent::loop() {
   }
 }
 
-void BdrBleComponent::handle_notify_(uint16_t handle, const uint8_t *data,
-                                     uint16_t len) {
-  if (handle == HANDLE_SVC3_CHAL && len >= 8) {
-    this->log_rx_hex_("SVC3[33]", data, len, true);
-    uint32_t id1 = static_cast<uint32_t>(data[0]) |
-                   (static_cast<uint32_t>(data[1]) << 8) |
-                   (static_cast<uint32_t>(data[2]) << 16) |
-                   (static_cast<uint32_t>(data[3]) << 24);
-    uint32_t id2 = static_cast<uint32_t>(data[4]) |
-                   (static_cast<uint32_t>(data[5]) << 8) |
-                   (static_cast<uint32_t>(data[6]) << 16) |
-                   (static_cast<uint32_t>(data[7]) << 24);
-    uint32_t v0 = 0, v1 = 0;
-    tea_encrypt_(this->auth_level_, id1, id2, v0, v1);
-
-    uint8_t resp[9] = {
-        this->auth_level_,
-        static_cast<uint8_t>(v0 & 0xFF),
-        static_cast<uint8_t>((v0 >> 8) & 0xFF),
-        static_cast<uint8_t>((v0 >> 16) & 0xFF),
-        static_cast<uint8_t>((v0 >> 24) & 0xFF),
-        static_cast<uint8_t>(v1 & 0xFF),
-        static_cast<uint8_t>((v1 >> 8) & 0xFF),
-        static_cast<uint8_t>((v1 >> 16) & 0xFF),
-        static_cast<uint8_t>((v1 >> 24) & 0xFF),
-    };
-    esp_ble_gattc_write_char(this->parent()->get_gattc_if(),
-                             this->parent()->get_conn_id(), HANDLE_SVC3_RESP,
-                             sizeof(resp), resp, ESP_GATT_WRITE_TYPE_RSP,
-                             ESP_GATT_AUTH_REQ_NONE);
-    this->state_ = STATE_SVC3_WAIT_RESULT;
-    this->last_action_ms_ = millis();
-    return;
-  }
-
-  if (handle == HANDLE_SVC3_ACK && len >= 1) {
-    this->log_rx_hex_("SVC3[38]", data, len, true);
-    if (data[0] == 0x01) {
-      this->publish_status_("BLE Unlocked -> RUB Auth");
-      const uint8_t rub_chal_req[6] = {0x02, 0x01, 0x00, 0x02, 0x00, 0x03};
-      this->send_direct_channel_(rub_chal_req, sizeof(rub_chal_req));
-      this->state_ = STATE_RUB_WAIT_CHALLENGE;
-      this->retry_count_ = 0;
-      this->last_action_ms_ = millis();
-    } else if (this->state_ == STATE_SVC3_WAIT_RESULT) {
-      this->publish_status_("Service 3 Auth Rejected");
-    }
-    return;
-  }
-
-  if (handle == HANDLE_DIRECT_RX && len >= 2) {
-    this->handle_direct_segment_(data, len);
-  }
-}
-
-void BdrBleComponent::handle_direct_segment_(const uint8_t *data,
-                                             uint16_t len) {
-  const uint8_t seg = data[0];
-  if (seg == 0x00) {
-    this->rx_reassembly_buf_.assign(data + 1, data + len);
-    return;
-  }
-  if (seg < 0xFF) {
-    if (!this->rx_reassembly_buf_.empty() &&
-        this->rx_reassembly_buf_.size() + (len - 1) <= 2048) {
-      this->rx_reassembly_buf_.insert(this->rx_reassembly_buf_.end(), data + 1,
-                                      data + len);
-    }
-    return;
-  }
-
-  // seg == 0xFF: final segment (or single-segment frame)
-  const uint8_t *frame_ptr = nullptr;
-  size_t frame_len = 0;
-  if (!this->rx_reassembly_buf_.empty()) {
-    this->rx_reassembly_buf_.insert(this->rx_reassembly_buf_.end(), data + 1,
-                                    data + len);
-    frame_ptr = this->rx_reassembly_buf_.data();
-    frame_len = this->rx_reassembly_buf_.size();
-  } else {
-    frame_ptr = data + 1;
-    frame_len = len - 1;
-  }
-
-  if (frame_len >= 4) {
-    uint16_t rx_crc =
-        (static_cast<uint16_t>(frame_ptr[frame_len - 2]) << 8) |
-        frame_ptr[frame_len - 1];
-    uint16_t calc_crc = crc16_ccitt_(frame_ptr, frame_len - 2);
-    if (rx_crc == calc_crc && frame_ptr[0] == 0x01) {
-      this->handle_direct_payload_(frame_ptr + 1, frame_len - 3);
-    } else {
-      ESP_LOGW(TAG, "DirectChannel CRC/channel mismatch (rx=0x%04X calc=0x%04X)",
-               rx_crc, calc_crc);
-    }
-  }
-  this->rx_reassembly_buf_.clear();
-}
-
-void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
-                                             size_t len) {
-  if (len < 6) {
-    return;
-  }
-  const uint8_t msg_type = payload[3];
-  const uint8_t func = payload[4];
-
-  // RUB v2.01 Challenge Response: 02 01 00 02 01 03 <serial_BE(4)> <chal_BE(4)>
-  if (msg_type == 0x02 && func == 0x01 && len >= 14) {
-    this->log_rx_hex_("RUB_CHAL", payload, len, true);
-    uint32_t srv_serial = (static_cast<uint32_t>(payload[6]) << 24) |
-                          (static_cast<uint32_t>(payload[7]) << 16) |
-                          (static_cast<uint32_t>(payload[8]) << 8) | payload[9];
-    uint32_t time_chal = (static_cast<uint32_t>(payload[10]) << 24) |
-                         (static_cast<uint32_t>(payload[11]) << 16) |
-                         (static_cast<uint32_t>(payload[12]) << 8) |
-                         payload[13];
-    uint32_t v0 = 0, v1 = 0;
-    tea_encrypt_(this->auth_level_, srv_serial, time_chal, v0, v1);
-
-    uint8_t auth_req[16] = {
-        0x02,
-        0x01,
-        0x00,
-        0x02,
-        0x02,
-        0x03,
-        0xFF,
-        this->auth_level_,
-        static_cast<uint8_t>((v0 >> 24) & 0xFF),
-        static_cast<uint8_t>((v0 >> 16) & 0xFF),
-        static_cast<uint8_t>((v0 >> 8) & 0xFF),
-        static_cast<uint8_t>(v0 & 0xFF),
-        static_cast<uint8_t>((v1 >> 24) & 0xFF),
-        static_cast<uint8_t>((v1 >> 16) & 0xFF),
-        static_cast<uint8_t>((v1 >> 8) & 0xFF),
-        static_cast<uint8_t>(v1 & 0xFF),
-    };
-    this->send_direct_channel_(auth_req, sizeof(auth_req));
-    this->state_ = STATE_RUB_WAIT_AUTH_ACK;
-    this->last_action_ms_ = millis();
-    return;
-  }
-
-  // RUB v2.01 Auth Ack: 02 01 00 02 03 03 FF <level> ...
-  if (msg_type == 0x02 && func == 0x03 && len >= 8) {
-    this->log_rx_hex_("RUB_ACK", payload, len, true);
-    uint8_t granted = payload[7];
-    if (granted > 0) {
-      char msg[64];
-      snprintf(msg, sizeof(msg), "Connected (auth level %u, reading snapshot)",
-               granted);
-      this->publish_status_(msg);
-      this->state_ = STATE_READING_SNAPSHOT;
-      this->snapshot_sub_idx_ = 1;
-      this->discovered_datapoints_.clear();
-      this->waiting_response_ = false;
-      this->last_action_ms_ = millis();
-    } else {
-      this->publish_status_("CAN-BUS Auth Rejected");
-    }
-    return;
-  }
-
-  // Single Read Positive Ack: 02 01 00 00 01 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx> <Data...>
-  if (msg_type == 0x00 && func == 0x01 && len >= 10) {
-    this->waiting_response_ = false;
-    uint8_t node_id = payload[6];
-    uint16_t index =
-        (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
-    uint8_t sub_index = payload[9];
-    this->handle_single_read_ack_(node_id, index, sub_index, payload + 10,
-                                  len - 10);
-    return;
-  }
-
-  // Single Read Negative Ack (SDO Abort): 02 01 00 00 02 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx> <AbortCode(4)>
-  if (msg_type == 0x00 && func == 0x02 && len >= 10) {
-    this->waiting_response_ = false;
-    uint8_t node_id = payload[6];
-    uint16_t index =
-        (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
-    uint8_t sub_index = payload[9];
-    if (index == 0x502B) {
-      ESP_LOGD(TAG, "Snapshot 0x502B:%02X -> empty/NACK", sub_index);
-      if (this->state_ == STATE_READING_SNAPSHOT &&
-          sub_index == this->snapshot_sub_idx_) {
-        this->snapshot_sub_idx_++;
-      }
-    } else {
-      this->mark_datapoint_unsupported_(node_id, index, sub_index, 0x02);
-    }
-    return;
-  }
-
-  // Write Confirmed Positive Ack: 02 01 00 00 05 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx>
-  if (msg_type == 0x00 && func == 0x05 && len >= 10) {
-    this->waiting_response_ = false;
-    uint8_t node_id = payload[6];
-    uint16_t index =
-        (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
-    uint8_t sub_index = payload[9];
-    ESP_LOGI(TAG, "Write ACK for 0x%04X:%02X; reading back value", index,
-             sub_index);
-    this->send_read_param_(node_id, index, sub_index);
-    this->waiting_response_ = true;
-    this->last_req_ms_ = millis();
-    this->last_action_ms_ = this->last_req_ms_;
-    return;
-  }
-
-  // Write Confirmed Negative Ack (SDO Abort): 02 01 00 00 06 03 <NodeId> <Idx_HI> <Idx_LO> <SubIdx> <AbortCode(4)>
-  if (msg_type == 0x00 && func == 0x06 && len >= 10) {
-    this->waiting_response_ = false;
-    uint8_t node_id = payload[6];
-    uint16_t index =
-        (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
-    uint8_t sub_index = payload[9];
-    uint32_t abort_code = 0;
-    if (len >= 14) {
-      abort_code = static_cast<uint32_t>(payload[10]) |
-                   (static_cast<uint32_t>(payload[11]) << 8) |
-                   (static_cast<uint32_t>(payload[12]) << 16) |
-                   (static_cast<uint32_t>(payload[13]) << 24);
-    }
-    ESP_LOGW(TAG,
-             "Write NACK for 0x%04X:%02X (SDO abort=0x%08X); reverting state",
-             index, sub_index, static_cast<unsigned>(abort_code));
-    this->send_read_param_(node_id, index, sub_index);
-    this->waiting_response_ = true;
-    this->last_req_ms_ = millis();
-    this->last_action_ms_ = this->last_req_ms_;
-    return;
-  }
-
-  // Batch GetListResponse: 02 xx 00 00 09 xx <Count> <Items...>
-  if (msg_type == 0x00 && func == 0x09 && len >= 7) {
-    this->waiting_response_ = false;
-    this->get_list_stage_ = 2;  // Confirmed working!
-    this->handle_get_list_response_(payload, len);
-  }
-}
-
-void BdrBleComponent::handle_single_read_ack_(uint8_t node_id, uint16_t index,
-                                              uint8_t sub_index,
-                                              const uint8_t *data,
-                                              size_t data_len) {
-  if (index == 0x502B) {
-    this->handle_snapshot_descriptor_(sub_index, data, data_len);
-    if (this->state_ == STATE_READING_SNAPSHOT &&
-        sub_index == this->snapshot_sub_idx_) {
-      this->snapshot_sub_idx_++;
-    }
-    return;
-  }
-  char tag[24];
-  snprintf(tag, sizeof(tag), "0x%04X:%02X", index, sub_index);
-  this->log_rx_hex_(tag, data, data_len, false);
-  this->dispatch_datapoint_value_(node_id, index, sub_index, data, data_len);
-}
-
-void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
-                                                size_t len) {
-  uint8_t count = payload[6];
-  char tag[24];
-  snprintf(tag, sizeof(tag), "LIST[%u]", count);
-  this->log_rx_hex_(tag, payload, (len > 32) ? 32 : len, false);
-  size_t offset = 7;
-  for (uint8_t i = 0; i < count && offset + 8 <= len; i++) {
-    uint8_t status = payload[offset + 0];
-    uint8_t node_id = payload[offset + 1];
-    uint16_t index = (static_cast<uint16_t>(payload[offset + 2]) << 8) |
-                     payload[offset + 3];
-    uint8_t sub_index = payload[offset + 4];
-    uint16_t data_len = (static_cast<uint16_t>(payload[offset + 6]) << 8) |
-                        payload[offset + 7];
-    offset += 8;
-    if (offset + data_len > len) {
-      break;
-    }
-    if (status == 0x01) {
-      this->dispatch_datapoint_value_(node_id, index, sub_index,
-                                      payload + offset, data_len);
-    } else {
-      this->mark_datapoint_unsupported_(node_id, index, sub_index, status);
-    }
-    offset += data_len;
-  }
-}
-
-void BdrBleComponent::mark_datapoint_unsupported_(uint8_t node_id,
-                                                  uint16_t index,
-                                                  uint8_t sub_index,
-                                                  uint8_t status_code) {
-  for (auto &grp : this->poll_groups_) {
-    for (auto &dp : grp.items) {
-      if (dp.node_id == node_id && dp.index == index &&
-          dp.sub_index == sub_index && !dp.unsupported) {
-        dp.unsupported = true;
-        const char *entity_name = "unregistered";
-#ifdef USE_SENSOR
-        if (!dp.sensors.empty() && dp.sensors[0] != nullptr) {
-          entity_name = dp.sensors[0]->get_name().c_str();
-        }
-#endif
-#ifdef USE_TEXT_SENSOR
-        if (!dp.text_sensors.empty() && dp.text_sensors[0] != nullptr) {
-          entity_name = dp.text_sensors[0]->get_name().c_str();
-        }
-#endif
-#ifdef USE_NUMBER
-        if (!dp.numbers.empty() && dp.numbers[0] != nullptr) {
-          entity_name = dp.numbers[0]->get_name().c_str();
-        }
-#endif
-#ifdef USE_SELECT
-        if (!dp.selects.empty() && dp.selects[0] != nullptr) {
-          entity_name = dp.selects[0]->get_name().c_str();
-        }
-#endif
-        ESP_LOGW(TAG,
-                 "Datapoint 0x%04X:%02X (%s) reported unsupported by boiler "
-                 "(status=0x%02X); disabling polling",
-                 index, sub_index, entity_name, status_code);
-      }
-    }
-  }
-}
-
-void BdrBleComponent::handle_snapshot_descriptor_(uint8_t sub_index,
-                                                  const uint8_t *data,
-                                                  size_t data_len) {
-  if (data_len < 4) {
-    ESP_LOGD(TAG, "Snapshot 0x502B:%02X -> %zu bytes (empty)", sub_index,
-             data_len);
-    return;
-  }
-  uint16_t count =
-      static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
-  uint16_t parsed = 0;
-  for (uint16_t k = 0; k < count; k++) {
-    size_t off = 4 + static_cast<size_t>(k) * 15;
-    if (off + 15 > data_len) {
-      break;
-    }
-    uint16_t dp_idx = static_cast<uint16_t>(data[off + 2]) |
-                      (static_cast<uint16_t>(data[off + 3]) << 8);
-    uint8_t dp_sub = data[off + 12];
-#ifdef USE_NUMBER
-    uint32_t raw_min_u = static_cast<uint32_t>(data[off + 4]) |
-                         (static_cast<uint32_t>(data[off + 5]) << 8) |
-                         (static_cast<uint32_t>(data[off + 6]) << 16) |
-                         (static_cast<uint32_t>(data[off + 7]) << 24);
-    uint32_t raw_max_u = static_cast<uint32_t>(data[off + 8]) |
-                         (static_cast<uint32_t>(data[off + 9]) << 8) |
-                         (static_cast<uint32_t>(data[off + 10]) << 16) |
-                         (static_cast<uint32_t>(data[off + 11]) << 24);
-    uint8_t raw_inc = data[off + 13];
-    if (raw_min_u != 0xFFFFFFFFUL && raw_max_u != 0xFFFFFFFFUL) {
-      for (auto &grp : this->poll_groups_) {
-        for (auto &dp : grp.items) {
-          if (dp.index == dp_idx && dp.sub_index == dp_sub &&
-              !dp.numbers.empty()) {
-            bool is_signed = (dp.data_type == BDR_TYPE_I8 ||
-                              dp.data_type == BDR_TYPE_I16 ||
-                              dp.data_type == BDR_TYPE_I32);
-            float min_f = is_signed
-                              ? static_cast<float>(static_cast<int32_t>(raw_min_u)) * dp.scale
-                              : static_cast<float>(raw_min_u) * dp.scale;
-            float max_f = is_signed
-                              ? static_cast<float>(static_cast<int32_t>(raw_max_u)) * dp.scale
-                              : static_cast<float>(raw_max_u) * dp.scale;
-            if (min_f < max_f) {
-              for (auto *num : dp.numbers) {
-                num->traits.set_min_value(min_f);
-                num->traits.set_max_value(max_f);
-                if (raw_inc > 0 && raw_inc != 0xFF) {
-                  num->traits.set_step(static_cast<float>(raw_inc) * dp.scale);
-                }
-              }
-              ESP_LOGI(TAG,
-                       "Updated limits for 0x%04X:%02X from 0x502B: min=%.2f max=%.2f",
-                       dp_idx, dp_sub, min_f, max_f);
-            }
-          }
-        }
-      }
-    }
-#endif
-    uint32_t packed = (static_cast<uint32_t>(dp_idx) << 8) | dp_sub;
-    bool exists = false;
-    for (uint32_t existing : this->discovered_datapoints_) {
-      if (existing == packed) {
-        exists = true;
-        break;
-      }
-    }
-    if (!exists) {
-      this->discovered_datapoints_.push_back(packed);
-    }
-    parsed++;
-  }
-  ESP_LOGI(TAG,
-           "Snapshot 0x502B:%02X -> %u descriptors (%zu bytes, total unique=%zu)",
-           sub_index, parsed, data_len, this->discovered_datapoints_.size());
-}
-
-void BdrBleComponent::log_appliance_snapshot_() {
-  ESP_LOGI(TAG,
-           "=== Appliance Snapshot (%zu supported datapoints from 0x502B:01..15) ===",
-           this->discovered_datapoints_.size());
-  if (this->discovered_datapoints_.empty()) {
-    ESP_LOGI(TAG, "=== No 0x502B descriptors returned by appliance ===");
-    return;
-  }
-  char line[200];
-  int pos = snprintf(line, sizeof(line), "BDR_SNAPSHOT:");
-  for (size_t i = 0; i < this->discovered_datapoints_.size(); i++) {
-    uint16_t idx =
-        static_cast<uint16_t>((this->discovered_datapoints_[i] >> 8) & 0xFFFF);
-    uint8_t sub = static_cast<uint8_t>(this->discovered_datapoints_[i] & 0xFF);
-    if (pos > 175) {
-      ESP_LOGI(TAG, "%s", line);
-      pos = snprintf(line, sizeof(line), "BDR_SNAPSHOT:");
-    }
-    pos += snprintf(line + pos, sizeof(line) - pos, "%s%04X:%02X",
-                    (pos > 13) ? "," : "", idx, sub);
-  }
-  if (pos > 13) {
-    ESP_LOGI(TAG, "%s", line);
-  }
-  ESP_LOGI(TAG,
-           "=== End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===");
-}
-
-void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
-                                                uint8_t sub_index,
-                                                const uint8_t *data,
-                                                size_t data_len) {
-  if (data_len == 0) {
-    return;
-  }
-
-  for (auto &grp : this->poll_groups_) {
-    for (auto &dp : grp.items) {
-      if (dp.node_id != node_id || dp.index != index ||
-          dp.sub_index != sub_index) {
-        continue;
-      }
-
-      // Decode numeric value if numeric/enum type
-      bool valid_numeric = false;
-      float numeric_val = 0.0f;
-      int32_t raw_enum_val = 0;
-
-      switch (dp.data_type) {
-        case BDR_TYPE_U8:
-          if (data_len >= 1 && data[0] != 0xFF) {
-            numeric_val = static_cast<float>(data[0]) * dp.scale;
-            valid_numeric = true;
-          }
-          break;
-
-        case BDR_TYPE_I8:
-          if (data_len >= 1) {
-            int8_t v = static_cast<int8_t>(data[0]);
-            if (v != -128) {
-              numeric_val = static_cast<float>(v) * dp.scale;
-              valid_numeric = true;
-            }
-          }
-          break;
-
-        case BDR_TYPE_U16:
-          if (data_len >= 2) {
-            uint16_t v = static_cast<uint16_t>(data[0]) |
-                         (static_cast<uint16_t>(data[1]) << 8);
-            if (v != 0xFFFF) {
-              numeric_val = static_cast<float>(v) * dp.scale;
-              valid_numeric = true;
-            }
-          }
-          break;
-
-        case BDR_TYPE_I16:
-          if (data_len >= 2) {
-            int16_t v = static_cast<int16_t>(
-                static_cast<uint16_t>(data[0]) |
-                (static_cast<uint16_t>(data[1]) << 8));
-            if (v != -32768) {
-              numeric_val = static_cast<float>(v) * dp.scale;
-              valid_numeric = true;
-            }
-          }
-          break;
-
-        case BDR_TYPE_U32:
-          if (data_len >= 4) {
-            uint32_t v = static_cast<uint32_t>(data[0]) |
-                         (static_cast<uint32_t>(data[1]) << 8) |
-                         (static_cast<uint32_t>(data[2]) << 16) |
-                         (static_cast<uint32_t>(data[3]) << 24);
-            if (v != 0xFFFFFFFFUL) {
-              numeric_val = static_cast<float>(v) * dp.scale;
-              valid_numeric = true;
-            }
-          } else if (data_len == 2) {
-            uint16_t v = static_cast<uint16_t>(data[0]) |
-                         (static_cast<uint16_t>(data[1]) << 8);
-            if (v != 0xFFFF) {
-              numeric_val = static_cast<float>(v) * dp.scale;
-              valid_numeric = true;
-            }
-          }
-          break;
-
-        case BDR_TYPE_I32:
-          if (data_len >= 4) {
-            int32_t v = static_cast<int32_t>(
-                static_cast<uint32_t>(data[0]) |
-                (static_cast<uint32_t>(data[1]) << 8) |
-                (static_cast<uint32_t>(data[2]) << 16) |
-                (static_cast<uint32_t>(data[3]) << 24));
-            if (v != static_cast<int32_t>(0x80000000UL)) {
-              numeric_val = static_cast<float>(v) * dp.scale;
-              valid_numeric = true;
-            }
-          }
-          break;
-
-        case BDR_TYPE_ENUM:
-          if (data_len >= 2) {
-            raw_enum_val = static_cast<int32_t>(
-                static_cast<uint16_t>(data[0]) |
-                (static_cast<uint16_t>(data[1]) << 8));
-          } else {
-            raw_enum_val = data[0];
-          }
-          numeric_val = static_cast<float>(raw_enum_val);
-          valid_numeric = true;
-          break;
-
-        default:
-          break;
-      }
-
-#ifdef USE_SENSOR
-      if (valid_numeric) {
-        for (auto *sens : dp.sensors) {
-          sens->publish_state(numeric_val);
-        }
-      }
-#endif
-
-#ifdef USE_NUMBER
-      if (valid_numeric) {
-        for (auto *num : dp.numbers) {
-          num->publish_state(numeric_val);
-        }
-      }
-#endif
-
-#ifdef USE_SELECT
-      if (valid_numeric && dp.data_type == BDR_TYPE_ENUM) {
-        for (auto *sel : dp.selects) {
-          sel->publish_from_raw(static_cast<int>(raw_enum_val));
-        }
-      }
-#endif
-
-#ifdef USE_TEXT_SENSOR
-      if (!dp.text_sensors.empty()) {
-        std::string text_val;
-        if (dp.data_type == BDR_TYPE_ENUM) {
-          uint64_t key =
-              (static_cast<uint64_t>(index) << 24) |
-              (static_cast<uint64_t>(sub_index) << 16) |
-              (static_cast<uint64_t>(static_cast<uint16_t>(raw_enum_val)));
-          auto it = this->enum_translations_.find(key);
-          if (it != this->enum_translations_.end()) {
-            text_val = it->second;
-          } else {
-            char fbuf[24];
-            snprintf(fbuf, sizeof(fbuf), "%d", static_cast<int>(raw_enum_val));
-            text_val = fbuf;
-          }
-        } else if (dp.data_type == BDR_TYPE_VISIBLE_STRING) {
-          size_t slen = 0;
-          while (slen < data_len && data[slen] != 0) {
-            slen++;
-          }
-          text_val.assign(reinterpret_cast<const char *>(data), slen);
-        } else if (dp.data_type == BDR_TYPE_TIME_OF_DAY && data_len >= 2) {
-          char tbuf[16];
-          snprintf(tbuf, sizeof(tbuf), "%02u:%02u", data[0], data[1]);
-          text_val = tbuf;
-        }
-        for (auto *ts : dp.text_sensors) {
-          ts->publish_state(text_val);
-        }
-      }
-#endif
-    }
-  }
-}
-
-}  // namespace bdr_ble
-}  // namespace esphome
+}  // namespace esphome::bdr_ble

@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented `WriteConfirmedRequest` (`Function = 0x04`) queue in `BdrBleComponent` with automatic read-back on `WritePosAck` (`Function = 0x05`) and state revert on `WriteNegAck` (`Function = 0x06`).
   - Updated `docs/configurator.html` to default writable `Parameter` datapoints to `number (rw)` / `select (rw)` and generate `number:` and `select:` YAML blocks.
 
+### Changed
+- **Modular C++ Architecture:**
+  - Extracted pure protocol constants, CRC-16/MODBUS, 32-round TEA cipher, and datapoint encode/decode helpers into `bdr_protocol.h` and `bdr_protocol.cpp`.
+  - Split `BdrBleComponent` into `bdr_ble.cpp` (lifecycle, BLE GATT/GAP state machine, TX framing, and polling/write scheduler) and `bdr_ble_parser.cpp` (RX notification reassembly, RUB authentication, `0x502B` snapshot discovery, `Auto-Skip`, and entity state dispatching).
+  - Extracted `BdrBleNumber` and `BdrBleSelect` into dedicated platform submodules (`number/bdr_ble_number.h/.cpp` and `select/bdr_ble_select.h/.cpp`) using `Parented<BdrBleComponent>`.
+  - Tracked `waiting_for_get_list_` separately from single-item reads/writes so a single write timeout never falsely downgrades `GetListRequest` batch polling.
+
 ### Fixed
 - **Interactive YAML Constructor (`docs/configurator.html`):**
   - Display all `Enum` values and `FunctionGroup` badges in full without truncating after 5 items (`...`).

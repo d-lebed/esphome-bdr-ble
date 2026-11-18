@@ -35,7 +35,9 @@ CONF_RESOLVED_INDEX = "_obd_index"
 CONF_RESOLVED_SUB = "_obd_sub"
 CONF_RESOLVED_ENUM = "_obd_enum"
 
-BdrBleSelect = bdr_ble_ns.class_("BdrBleSelect", select.Select)
+BdrBleSelect = bdr_ble_ns.class_(
+    "BdrBleSelect", select.Select, cg.Parented.template(BdrBleComponent)
+)
 
 
 def _preprocess_select_item(value: Any) -> dict[str, Any]:
@@ -157,8 +159,7 @@ async def _register_one_select(
             options.append(desc)
 
     sel = await select.new_select(item_cfg, options=options)
-    for raw_val, desc in enum_map.items():
-        cg.add(sel.add_enum_option(raw_val, desc))
+    await cg.register_parented(sel, hub)
 
     interval = item_cfg.get(CONF_UPDATE_INTERVAL)
     interval_ms = (
@@ -166,6 +167,24 @@ async def _register_one_select(
     )
     node_id = item_cfg.get(CONF_NODE_ID, default_node_id)
     node_id_val = 0xFF if node_id is None else node_id
+
+    cg.add(
+        sel.set_datapoint_meta(
+            node_id_val,
+            item_cfg[CONF_RESOLVED_INDEX],
+            item_cfg[CONF_RESOLVED_SUB],
+        )
+    )
+    for raw_val, desc in enum_map.items():
+        cg.add(sel.add_enum_option(raw_val, desc))
+        cg.add(
+            hub.register_enum_translation(
+                item_cfg[CONF_RESOLVED_INDEX],
+                item_cfg[CONF_RESOLVED_SUB],
+                raw_val,
+                desc,
+            )
+        )
 
     cg.add(
         hub.register_select(

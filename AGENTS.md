@@ -33,7 +33,15 @@ components/bdr_ble/
 ├── __init__.py                         # Hub schema (ble_client_id, pin, node_id, auth_level)
 ├── obd.py                              # Compile-time OBD dictionary resolver & ESPHome metadata inference
 ├── obd_catalog.json                    # Compact JSON catalog (3,092 datapoints, 204 enums, FGs, models)
-├── bdr_ble.h / .cpp                    # BdrBleComponent BLEClientNode, TEA auth, 0x502B snapshot, 0x08 batching
+├── bdr_protocol.h / .cpp               # Protocol constants, CRC16, 32-round TEA cipher, and value codecs
+├── bdr_ble.h / .cpp                    # BdrBleComponent lifecycle, BLE GATT/GAP state machine, TX & scheduler
+├── bdr_ble_parser.cpp                  # RX DirectChannel reassembly, RUB auth, 0x502B snapshot & state dispatch
+├── number/
+│   ├── __init__.py                     # Writable numeric parameter platform (single & grouped syntax)
+│   └── bdr_ble_number.h / .cpp         # BdrBleNumber entity class (Parented<BdrBleComponent>)
+├── select/
+│   ├── __init__.py                     # Writable enum parameter platform (single & grouped syntax)
+│   └── bdr_ble_select.h / .cpp         # BdrBleSelect entity class (Parented<BdrBleComponent>)
 ├── sensor/
 │   └── __init__.py                     # Numeric/Enum sensor platform (single & grouped batch syntax)
 └── text_sensor/

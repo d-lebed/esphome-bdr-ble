@@ -48,7 +48,9 @@ CONF_RESOLVED_SUB = "_obd_sub"
 CONF_RESOLVED_TYPE = "_obd_type"
 CONF_RESOLVED_GAIN = "_obd_gain"
 
-BdrBleNumber = bdr_ble_ns.class_("BdrBleNumber", number.Number)
+BdrBleNumber = bdr_ble_ns.class_(
+    "BdrBleNumber", number.Number, cg.Parented.template(BdrBleComponent)
+)
 
 
 def _preprocess_number_item(value: Any) -> dict[str, Any]:
@@ -183,6 +185,7 @@ async def _register_one_number(
         max_value=item_cfg[CONF_MAX_VALUE],
         step=item_cfg[CONF_STEP],
     )
+    await cg.register_parented(num, hub)
     interval = item_cfg.get(CONF_UPDATE_INTERVAL)
     interval_ms = (
         interval.total_milliseconds if interval is not None else default_interval_ms
@@ -190,6 +193,15 @@ async def _register_one_number(
     node_id = item_cfg.get(CONF_NODE_ID, default_node_id)
     node_id_val = 0xFF if node_id is None else node_id
 
+    cg.add(
+        num.set_datapoint_meta(
+            node_id_val,
+            item_cfg[CONF_RESOLVED_INDEX],
+            item_cfg[CONF_RESOLVED_SUB],
+            item_cfg[CONF_RESOLVED_TYPE],
+            item_cfg[CONF_RESOLVED_GAIN],
+        )
+    )
     cg.add(
         hub.register_number(
             num,

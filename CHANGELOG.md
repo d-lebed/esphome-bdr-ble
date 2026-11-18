@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.0] - 2026-11-17
+## [0.3.0] - 2026-11-18
 
 ### Added
 - **Initial Release of `bdr_ble` ESPHome External Component:**
@@ -31,5 +31,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/d-lebed/esphome-bdr-ble/releases/tag/v1.0.0
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/d-lebed/esphome-bdr-ble/releases/tag/v0.3.0

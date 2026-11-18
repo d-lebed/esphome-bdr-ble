@@ -144,10 +144,17 @@
       color: var(--muted);
       font-size: 14px;
       font-weight: 500;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color 0.15s ease, background 0.15s ease;
     }
     .nav-links a.nav-item:hover {
       color: var(--text);
       text-decoration: none;
+    }
+    .nav-links a.nav-item.active {
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.1);
     }
     .btn {
       display: inline-flex;
@@ -199,6 +206,22 @@
       display: block;
       cursor: pointer;
     }
+    .lang-select {
+      background: var(--panel-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .lang-select:hover, .lang-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18);
+    }
 
     /* Hero Banner */
     .hero {
@@ -248,13 +271,16 @@
     }
 
     /* Layout Grid */
+    html {
+      scroll-behavior: smooth;
+    }
     .layout {
       max-width: 1180px;
       margin: 0 auto;
       padding: 32px 24px 64px;
       display: grid;
-      grid-template-columns: 240px minmax(0, 1fr);
-      gap: 40px;
+      grid-template-columns: 265px minmax(0, 1fr);
+      gap: 36px;
       align-items: start;
     }
     @media (max-width: 920px) {
@@ -268,6 +294,8 @@
     .toc {
       position: sticky;
       top: 76px;
+      max-height: calc(100vh - 96px);
+      overflow-y: auto;
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -286,19 +314,75 @@
       margin: 0;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
     }
     .toc a {
       color: #cbd5e1;
       font-size: 13.5px;
-      display: block;
-      padding: 4px 6px;
-      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border-left: 3px solid transparent;
+      transition: all 0.15s ease;
     }
     .toc a:hover {
       background: var(--panel-alt);
       color: var(--accent);
       text-decoration: none;
+    }
+    .toc li.toc-item.active > a {
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+      font-weight: 600;
+      border-left-color: var(--accent);
+    }
+    .toc-chevron {
+      font-size: 10px;
+      opacity: 0.55;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+      flex-shrink: 0;
+    }
+    .toc li.toc-item.active > a .toc-chevron {
+      transform: rotate(90deg);
+      opacity: 1;
+      color: var(--accent);
+    }
+    .toc ul.toc-sublist {
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      margin: 0 0 0 11px;
+      padding-left: 8px;
+      border-left: 1px solid rgba(148, 163, 184, 0.22);
+      gap: 2px;
+      transition: max-height 0.25s ease, opacity 0.2s ease, margin 0.2s ease;
+    }
+    .toc li.toc-item.active > ul.toc-sublist {
+      max-height: 360px;
+      opacity: 1;
+      margin-top: 4px;
+      margin-bottom: 4px;
+    }
+    .toc ul.toc-sublist a.toc-sublink {
+      font-size: 12.5px;
+      color: var(--muted);
+      padding: 4px 8px;
+      border-left: 2px solid transparent;
+      border-radius: 0 5px 5px 0;
+      line-height: 1.35;
+    }
+    .toc ul.toc-sublist a.toc-sublink:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .toc ul.toc-sublist a.toc-sublink.active {
+      color: var(--accent);
+      font-weight: 600;
+      border-left-color: var(--accent);
+      background: rgba(56, 189, 248, 0.08);
     }
     .toc a.toc-highlight {
       color: var(--accent);
@@ -312,6 +396,9 @@
     .content section {
       margin-bottom: 48px;
       scroll-margin-top: 80px;
+    }
+    .content h3 {
+      scroll-margin-top: 84px;
     }
     .content h2 {
       font-size: 24px;
@@ -450,103 +537,112 @@
   <nav class="navbar" aria-label="Main Navigation">
     <a class="navbar-brand" href="./">
       <span>esphome-bdr-ble</span>
-      <span class="badge">v1.2.0</span>
+      <span class="badge">v1.3.0</span>
     </a>
     <div class="nav-links">
-      <a class="nav-item" href="#compatibility">Supported Models</a>
-      <a class="nav-item" href="#quick-start">Quick Start</a>
-      <a class="nav-item" href="#discovery-workflow">Discovery Guide</a>
-      <a class="nav-item" href="#configuration">YAML Reference</a>
-      <a class="nav-item" href="#faq">FAQ</a>
-      <a class="btn btn-primary" href="./configurator.html">⚡ Open YAML Configurator</a>
+      <a class="nav-item" href="#compatibility" data-i18n="nav_models">Supported Models</a>
+      <a class="nav-item" href="#quick-start" data-i18n="nav_quickstart">Quick Start</a>
+      <a class="nav-item" href="#discovery-workflow" data-i18n="nav_discovery">Discovery Guide</a>
+      <a class="nav-item" href="#configuration" data-i18n="nav_config">YAML Reference</a>
+      <a class="nav-item" href="#faq" data-i18n="nav_faq">FAQ</a>
+      <select id="lang-select" class="lang-select" aria-label="Language selector" onchange="setPageLang(this.value)">
+        <option value="en">🇬🇧 English</option>
+        <option value="de">🇩🇪 Deutsch</option>
+        <option value="fr">🇫🇷 Français</option>
+        <option value="nl">🇳🇱 Nederlands</option>
+        <option value="pl">🇵🇱 Polski</option>
+        <option value="it">🇮🇹 Italiano</option>
+        <option value="es">🇪🇸 Español</option>
+      </select>
+      <a class="btn btn-primary" href="./configurator.html" data-i18n="nav_configurator">⚡ Open YAML Configurator</a>
       <a class="btn" href="https://github.com/d-lebed/esphome-bdr-ble" target="_blank" rel="noopener">GitHub</a>
       <a class="bmc-link" href="https://www.buymeacoffee.com/lebiadz" target="_blank" rel="noopener" title="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" /></a>
     </div>
   </nav>
 
   <header class="hero">
-    <h1>ESPHome Bluetooth (BLE) Integration for BDR Thermea, De Dietrich, Baxi, Remeha &amp; Brötje Boilers and Heat Pumps</h1>
-    <p class="lead">
+    <h1 data-i18n="hero_title">ESPHome Bluetooth (BLE) Integration for BDR Thermea, De Dietrich, Baxi, Remeha &amp; Brötje Boilers and Heat Pumps</h1>
+    <p class="lead" data-i18n="hero_lead">
       Monitor live temperatures, water pressure, and energy consumption/delivery counters, and edit heating &amp; DHW parameters directly from <strong>Home Assistant</strong> over <strong>Bluetooth Low Energy (BLE)</strong> using a standard <strong>ESP32</strong> — <strong>no proprietary gateway (<code>GTW-08</code>, <code>SMART TC</code>) or wiring required</strong>, while keeping your existing <strong>OpenTherm / R-Bus</strong> room thermostat untouched.
     </p>
 
     <div class="cta-banner">
       <div class="cta-banner-text">
-        <h2>Interactive ESPHome YAML Constructor</h2>
-        <p>Browse all 3,092 BDR Thermea OBD datapoints, filter by boiler/heat-pump board model (<code>EHC-08</code>, <code>CU-08</code>, etc.) or paste your live <code>BDR_SNAPSHOT:</code> log to generate ready-to-flash ESPHome YAML.</p>
+        <h2 data-i18n="cta_title">Interactive ESPHome YAML Constructor</h2>
+        <p data-i18n="cta_desc">Browse all 3,092 BDR Thermea OBD datapoints, filter by boiler/heat-pump board model (<code>EHC-08</code>, <code>CU-08</code>, etc.) or paste your live <code>BDR_SNAPSHOT:</code> log to generate ready-to-flash ESPHome YAML.</p>
       </div>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="./configurator.html">Launch Interactive YAML Configurator →</a>
-        <a class="btn" href="https://github.com/d-lebed/esphome-bdr-ble" target="_blank" rel="noopener">View Repository on GitHub</a>
+        <a class="btn btn-primary" href="./configurator.html" data-i18n="cta_btn_launch">Launch Interactive YAML Configurator →</a>
+        <a class="btn" href="https://github.com/d-lebed/esphome-bdr-ble" target="_blank" rel="noopener" data-i18n="cta_btn_github">View Repository on GitHub</a>
       </div>
     </div>
   </header>
 
   <div class="layout">
     <aside class="toc" aria-label="Table of Contents">
-      <h3>Documentation</h3>
+      <h3 data-i18n="toc_heading">Documentation</h3>
       <ul>
-        <li><a class="toc-highlight" href="./configurator.html">⚡ YAML Configurator</a></li>
-        <li><a href="#features">Key Features</a></li>
-        <li><a href="#compatibility">Supported Boilers &amp; Heat Pumps</a></li>
-        <li><a href="#requirements">Requirements &amp; Pairing</a></li>
-        <li><a href="#quick-start">Quick Start YAML</a></li>
-        <li><a href="#discovery-workflow">3-Step Sensor Discovery</a></li>
-        <li><a href="#configuration">Configuration Reference</a></li>
-        <li><a href="#writable-parameters">Editing Parameters (number / select)</a></li>
-        <li><a href="#faq">FAQ &amp; Troubleshooting</a></li>
-        <li><a href="#protocol">Protocol Specification</a></li>
-        <li><a href="#disclaimer">Legal Notice &amp; License</a></li>
+        <li><a class="toc-highlight" href="./configurator.html" data-i18n="toc_configurator">⚡ YAML Configurator</a></li>
+        <li><a href="#features" data-i18n="toc_features">Key Features</a></li>
+        <li><a href="#compatibility" data-i18n="toc_compat">Supported Boilers &amp; Heat Pumps</a></li>
+        <li><a href="#requirements" data-i18n="toc_reqs">Requirements &amp; Pairing</a></li>
+        <li><a href="#quick-start" data-i18n="toc_quickstart">Quick Start YAML</a></li>
+        <li><a href="#discovery-workflow" data-i18n="toc_discovery">3-Step Sensor Discovery</a></li>
+        <li><a href="#configuration" data-i18n="toc_config">Configuration Reference</a></li>
+        <li><a href="#writable-parameters" data-i18n="toc_writable">Editing Parameters (number / select)</a></li>
+        <li><a href="#faq" data-i18n="toc_faq">FAQ &amp; Troubleshooting</a></li>
+        <li><a href="#protocol" data-i18n="toc_protocol">Protocol Specification</a></li>
+        <li><a href="#disclaimer" data-i18n="toc_disclaimer">Legal Notice &amp; License</a></li>
       </ul>
     </aside>
 
     <main class="content">
       <section id="features">
-        <h2>Key Features</h2>
+        <h2 data-i18n="sec_features_title">Key Features</h2>
         <div class="feature-grid">
           <div class="feature-card">
-            <h3>100% Wireless over BLE</h3>
-            <p>Connects directly to the appliance's built-in MK3 / EHC-08 / CU-GH08 Bluetooth interface using any ESP32 (<code>ESP32</code>, <code>ESP32-S3</code>, <code>ESP32-C3</code>, <code>ESP32-C6</code>). Your physical <code>R-Bus</code> / <code>OpenTherm</code> / <code>L-Bus</code> terminals stay free.</p>
+            <h3 data-i18n="feat1_title">100% Wireless over BLE</h3>
+            <p data-i18n="feat1_desc">Connects directly to the appliance's built-in MK3 / EHC-08 / CU-GH08 Bluetooth interface using any ESP32 (<code>ESP32</code>, <code>ESP32-S3</code>, <code>ESP32-C3</code>, <code>ESP32-C6</code>). Your physical <code>R-Bus</code> / <code>OpenTherm</code> / <code>L-Bus</code> terminals stay free.</p>
           </div>
           <div class="feature-card">
-            <h3>Automatic Passkey &amp; TEA Unlock</h3>
-            <p>Automatically performs BLE Passkey Entry bonding with your 6-digit boiler PIN and completes the two-stage 32-round TEA unlock handshake (GATT Service 3 + CAN-BUS <code>RUB v2.01</code>).</p>
+            <h3 data-i18n="feat2_title">Automatic Passkey &amp; TEA Unlock</h3>
+            <p data-i18n="feat2_desc">Automatically performs BLE Passkey Entry bonding with your 6-digit boiler PIN and completes the two-stage 32-round TEA unlock handshake (GATT Service 3 + CAN-BUS <code>RUB v2.01</code>).</p>
           </div>
           <div class="feature-card">
-            <h3>Read &amp; Write Support</h3>
-            <p>Read temperatures, pressures, status enums, and kWh energy counters (<code>sensor</code>, <code>text_sensor</code>), and edit numeric setpoints and operating modes (<code>number</code>, <code>select</code>) via confirmed CANopen writes.</p>
+            <h3 data-i18n="feat3_title">Read &amp; Write Support</h3>
+            <p data-i18n="feat3_desc">Read temperatures, pressures, status enums, and kWh energy counters (<code>sensor</code>, <code>binary_sensor</code>, <code>text_sensor</code>), and edit numeric setpoints and operating modes (<code>number</code>, <code>select</code>) via confirmed CANopen writes.</p>
           </div>
           <div class="feature-card">
-            <h3>3,092-Datapoint OBD Dictionary</h3>
-            <p>Reference parameters by short installer menu code (<code>AM027</code>, <code>DM001</code>, <code>AC005</code>, <code>DP070</code>), OBD name (<code>varApTotalEnergyDelivery</code>), or hex index (<code>0x5044:00</code>) with zero firmware bloat.</p>
+            <h3 data-i18n="feat4_title">3,092-Datapoint OBD Dictionary</h3>
+            <p data-i18n="feat4_desc">Reference parameters by short installer menu code (<code>AM027</code>, <code>DM001</code>, <code>AC005</code>, <code>DP070</code>), OBD name (<code>varApTotalEnergyDelivery</code>), or hex index (<code>0x5044:00</code>) with zero firmware bloat.</p>
           </div>
           <div class="feature-card">
-            <h3>Batch Polling &amp; Auto-Skip</h3>
-            <p>Combines datapoints sharing an <code>update_interval</code> into high-speed <code>GetListRequest (0x08)</code> batches and automatically disables unsupported parameters reported by the boiler.</p>
+            <h3 data-i18n="feat5_title">Batch Polling &amp; Auto-Skip</h3>
+            <p data-i18n="feat5_desc">Combines datapoints sharing an <code>update_interval</code> into high-speed <code>GetListRequest (0x08)</code> batches and automatically disables unsupported parameters reported by the boiler.</p>
           </div>
           <div class="feature-card">
-            <h3>Live <code>0x502B</code> Appliance Snapshot</h3>
-            <p>Reads the boiler's internal menu descriptor table (<code>0x502B:01..15</code>) on connect, refines <code>number</code> min/max/step limits, and outputs <code>BDR_SNAPSHOT:</code> lines for the <a href="./configurator.html">YAML Configurator</a>.</p>
+            <h3 data-i18n="feat6_title">Live <code>0x502B</code> Appliance Snapshot</h3>
+            <p data-i18n="feat6_desc">Reads the boiler's internal menu descriptor table (<code>0x502B:01..15</code>) on connect, refines <code>number</code> min/max/step limits, and outputs <code>BDR_SNAPSHOT:</code> lines for the <a href="./configurator.html">YAML Configurator</a>.</p>
           </div>
         </div>
       </section>
 
       <section id="compatibility">
-        <h2>Hardware Compatibility (Tested vs. Theoretical / Untested)</h2>
+        <h2 data-i18n="sec_compat_title">Hardware Compatibility (Tested vs. Theoretical / Untested)</h2>
 
-        <h3>✅ Physically Tested &amp; Verified Hardware</h3>
-        <p>
+        <h3 data-i18n="compat_tested_title">✅ Physically Tested &amp; Verified Hardware</h3>
+        <p data-i18n="compat_tested_intro">
           This integration has been <strong>physically tested and verified ONLY on the following appliance</strong>:
         </p>
-        <ul>
+        <ul data-i18n="compat_tested_list">
           <li><strong>De Dietrich Strateo R32</strong> air-to-water split heat pump with integrated DHW tank and electric backup heater</li>
           <li>Controller board: <strong><code>EHC-08</code></strong> (advertised BLE name <code>EHC-08_&lt;serial&gt;</code>, manufacturer data <code>"BDR"</code>)</li>
           <li>BLE firmware: <code>01.00</code>, BLE protocol: <code>01.03</code>, RUB protocol: <code>02.01</code></li>
           <li>ESPHome node: <strong>ESP32-C6</strong> (<code>esp32-c6-devkitm-1</code>, ESP-IDF framework)</li>
         </ul>
 
-        <h3>⚠️ Theoretical Compatibility (NOT Tested on Real Hardware)</h3>
-        <div class="callout callout-warn">
+        <h3 data-i18n="compat_untested_title">⚠️ Theoretical Compatibility (NOT Tested on Real Hardware)</h3>
+        <div class="callout callout-warn" data-i18n="compat_untested_warn">
           <strong>Untested Models Notice:</strong> The controller boards and appliance models in the table below have <strong>NOT been tested by the author</strong>. They are listed strictly as reference information because they share the same BLE GATT service (<code>f8fc98e4-5919-4a5c-852e-dfe04ad383c0</code>), TEA unlock algorithm, and <code>RUB v2.01</code> CANopen Object Dictionary in the official mobile service application. Compatibility is not guaranteed, and any testing on these units is done strictly at your own risk.
         </div>
 
@@ -554,9 +650,9 @@
           <table>
             <thead>
               <tr>
-                <th>Controller Board</th>
-                <th>Appliance Category</th>
-                <th>Brands &amp; Commercial Models</th>
+                <th data-i18n="th_board">Controller Board</th>
+                <th data-i18n="th_category">Appliance Category</th>
+                <th data-i18n="th_models">Brands &amp; Commercial Models</th>
               </tr>
             </thead>
             <tbody>
@@ -636,9 +732,9 @@
       </section>
 
       <section id="requirements">
-        <h2>Important Requirements &amp; BLE Pairing Guide</h2>
+        <h2 data-i18n="sec_reqs_title">Important Requirements &amp; BLE Pairing Guide</h2>
 
-        <div class="callout callout-warn">
+        <div class="callout callout-warn" data-i18n="reqs_callout">
           <strong>Mandatory ESPHome BLE Settings:</strong>
           <ul>
             <li>Use the <strong><code>esp-idf</code></strong> framework (<code>framework: type: esp-idf</code>).</li>
@@ -647,8 +743,8 @@
           </ul>
         </div>
 
-        <h3>Initial BLE Pairing Procedure</h3>
-        <ol>
+        <h3 data-i18n="reqs_pairing_title">Initial BLE Pairing Procedure</h3>
+        <ol data-i18n="reqs_pairing_steps">
           <li>On your boiler / heat pump control panel (HMI), activate <strong>Bluetooth pairing mode</strong> so the 6-digit PIN code is displayed on the boiler screen.</li>
           <li>Add that 6-digit PIN to your ESPHome <code>secrets.yaml</code>:
             <pre><code>strateo_ble_pin: 123456</code></pre>
@@ -659,10 +755,10 @@
       </section>
 
       <section id="quick-start">
-        <h2>Quick Start YAML</h2>
-        <p>Add the external component to your ESPHome YAML configuration:</p>
+        <h2 data-i18n="sec_qs_title">Quick Start YAML</h2>
+        <p data-i18n="sec_qs_desc">Add the external component to your ESPHome YAML configuration:</p>
         <pre><code>external_components:
-  - source: github://d-lebed/esphome-bdr-ble@v1.2.0
+  - source: github://d-lebed/esphome-bdr-ble@v1.3.0
     components: [bdr_ble]
 
 esp32:
@@ -703,13 +799,13 @@ text_sensor:
       </section>
 
       <section id="discovery-workflow">
-        <h2>3-Step Workflow: Discover All Supported Sensors for Your Boiler</h2>
-        <p>
+        <h2 data-i18n="sec_disc_title">3-Step Workflow: Discover All Supported Sensors for Your Boiler</h2>
+        <p data-i18n="sec_disc_intro">
           Because BDR Thermea's Object Dictionary contains <strong>3,092 datapoints</strong> across dozens of appliance types, each boiler only implements the subset matching its installed hardware. Follow this 3-step workflow to configure your exact appliance:
         </p>
 
-        <h3>Step 1: Flash the Minimal Config &amp; Capture <code>BDR_SNAPSHOT</code></h3>
-        <p>
+        <h3 data-i18n="disc_s1_title">Step 1: Flash the Minimal Config &amp; Capture <code>BDR_SNAPSHOT</code></h3>
+        <p data-i18n="disc_s1_desc">
           Flash the Quick Start configuration above (with no sensors yet) and open the ESPHome logs. Right after authenticating, <code>bdr_ble</code> reads the boiler's internal menu descriptor table (<code>0x502B:01..15</code>) and prints <code>BDR_SNAPSHOT:</code> lines:
         </p>
         <pre><code>[I][bdr_ble:425]: === Appliance Snapshot (370 supported datapoints from 0x502B:01..15) ===
@@ -717,24 +813,24 @@ text_sensor:
 [I][bdr_ble:439]: BDR_SNAPSHOT:5013:00,5016:00,501A:00,501E:00,5044:00,5045:00,...
 [I][bdr_ble:448]: === End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===</code></pre>
 
-        <h3>Step 2: Paste the Snapshot into the Interactive YAML Configurator</h3>
-        <ol>
+        <h3 data-i18n="disc_s2_title">Step 2: Paste the Snapshot into the Interactive YAML Configurator</h3>
+        <ol data-i18n="disc_s2_steps">
           <li>Open the <strong><a href="./configurator.html">Interactive ESPHome YAML Configurator</a></strong>.</li>
           <li>Paste the raw <code>BDR_SNAPSHOT:...</code> log lines into the <strong>Paste BDR_SNAPSHOT:... lines from ESPHome logs</strong> box.</li>
           <li>The table immediately filters to the exact parameters, live measurements (<code>Signal</code>), and counters (<code>Counter</code>) reported by your boiler.</li>
-          <li>Select the items you want, choose their polling interval (<code>10s</code>, <code>30s</code>, <code>60s</code>), and copy the generated <code>sensor:</code>, <code>text_sensor:</code>, <code>number:</code>, and <code>select:</code> YAML blocks.</li>
+          <li>Select the items you want, choose their polling interval (<code>10s</code>, <code>30s</code>, <code>60s</code>), and copy the generated <code>sensor:</code>, <code>binary_sensor:</code>, <code>text_sensor:</code>, <code>number:</code>, and <code>select:</code> YAML blocks.</li>
         </ol>
 
-        <h3>Step 3: Add Any Extra Internal Counters (Protected by <code>Auto-Skip</code>)</h3>
-        <p>
+        <h3 data-i18n="disc_s3_title">Step 3: Add Any Extra Internal Counters (Protected by <code>Auto-Skip</code>)</h3>
+        <p data-i18n="disc_s3_desc">
           Some internal CANopen datapoints (such as aggregate total energy delivery <code>varApTotalEnergyDelivery</code> <code>0x5089:00</code>) are supported by the boiler even if they don't appear on the front-panel menu. You can browse all datapoints for your board model in the <a href="./configurator.html">Configurator</a> and add them freely — if any datapoint is unsupported, <code>bdr_ble</code> logs a single warning and automatically disables polling for it (<code>Auto-Skip</code>).
         </p>
       </section>
 
       <section id="configuration">
-        <h2>Configuration Reference</h2>
+        <h2 data-i18n="sec_cfg_title">Configuration Reference</h2>
 
-        <h3>1. Hub (<code>bdr_ble</code>) &amp; Access Levels (<code>auth_level</code>)</h3>
+        <h3 data-i18n="cfg_hub_title">1. Hub (<code>bdr_ble</code>) &amp; Access Levels (<code>auth_level</code>)</h3>
         <pre><code>bdr_ble:
   id: boiler_hub
   ble_client_id: boiler_ble       # Required: ID of the ble_client entry
@@ -742,7 +838,7 @@ text_sensor:
   node_id: 1                      # Optional: Default CANopen Node ID (default: 1 = main Control Unit)
   auth_level: 3                   # Optional: TEA authorization level 1..4 (default: 4)</code></pre>
 
-        <p>
+        <p data-i18n="cfg_auth_explain">
           <strong>How <code>auth_level</code> works in the boiler controller:</strong><br />
           The boiler's CANopen controller partitions all parameters (<code>0x502B</code> <code>SubIndex 1..5</code>), live signals (<code>SubIndex 6..10</code>), and counters (<code>SubIndex 11..15</code>) into 5 hardware access levels. The boiler itself enforces these permissions: if you configure a lower <code>auth_level</code> (for example, <code>auth_level: 1</code> or <code>2</code>), the boiler will refuse both reading and writing any datapoint belonging to a higher level (returning SDO Abort / <code>status = 0x02</code>).
         </p>
@@ -791,12 +887,12 @@ text_sensor:
             </tbody>
           </table>
         </div>
-        <div class="callout">
+        <div class="callout" data-i18n="cfg_auth_tip">
           <strong>Tip:</strong> The <a href="./configurator.html">Interactive YAML Configurator</a> displays an <code>L1</code>–<code>L4</code> badge on every datapoint and automatically calculates the minimum required <code>auth_level</code> for your selected sensors and parameters.
         </div>
 
-        <h3>2. Numeric Sensors (<code>sensor</code>)</h3>
-        <p>
+        <h3 data-i18n="cfg_sensor_title">2. Numeric Sensors (<code>sensor</code>)</h3>
+        <p data-i18n="cfg_sensor_desc">
           Supports both <strong>grouped batch syntax</strong> (<code>sensors: [...]</code>) and single sensor syntax. All datapoints sharing the same <code>update_interval</code> are automatically batched into <code>GetListRequest (0x08)</code> reads.
         </p>
         <pre><code>sensor:
@@ -830,8 +926,8 @@ text_sensor:
       - parameter: varApTotalEnergyDelivery
         name: "Strateo Total Thermal Energy Delivered"</code></pre>
 
-        <h3>3. Binary Sensors (<code>binary_sensor</code>)</h3>
-        <p>
+        <h3 data-i18n="cfg_bsensor_title">3. Binary Sensors (<code>binary_sensor</code>)</h3>
+        <p data-i18n="cfg_bsensor_desc">
           Supports polling boolean / two-state status signals (such as <code>HM012</code> / <code>HM013</code> backup heater stages, <code>AM015</code> system pump running, <code>HM008</code> compressor running, <code>HM009</code> defrost active, or <code>DM000</code> DHW electrical backup) as Home Assistant <code>binary_sensor</code> entities (<code>0 = OFF</code>, <code>!= 0 = ON</code>).
         </p>
         <pre><code>binary_sensor:
@@ -845,8 +941,8 @@ text_sensor:
       - parameter: AM015
         name: "System pump running"</code></pre>
 
-        <h3>4. Text Sensors (<code>text_sensor</code>)</h3>
-        <p>
+        <h3 data-i18n="cfg_tsensor_title">4. Text Sensors (<code>text_sensor</code>)</h3>
+        <p data-i18n="cfg_tsensor_desc">
           Provides the <code>status</code> diagnostic sensor and decoded <code>Enum</code>, <code>VisibleString</code>, <code>OctetString</code>, and <code>TimeOfDay</code> datapoints:
         </p>
         <pre><code>text_sensor:
@@ -864,10 +960,10 @@ text_sensor:
       </section>
 
       <section id="writable-parameters">
-        <h2>Editing Boiler &amp; Heat Pump Parameters (<code>number</code> &amp; <code>select</code>)</h2>
+        <h2 data-i18n="sec_write_title">Editing Boiler &amp; Heat Pump Parameters (<code>number</code> &amp; <code>select</code>)</h2>
 
-        <h3>4. Writable Numeric Parameters (<code>number</code>)</h3>
-        <p>
+        <h3 data-i18n="cfg_number_title">5. Writable Numeric Parameters (<code>number</code>)</h3>
+        <p data-i18n="cfg_number_desc">
           Supports editing writable numeric parameters (<code>U8</code>, <code>I8</code>, <code>U16</code>, <code>I16</code>, <code>U32</code>, <code>I32</code>, such as DHW comfort/eco setpoints, heating curve slopes, or zone flow setpoints). When the boiler connects and reports its <code>0x502B</code> descriptors, <code>bdr_ble</code> dynamically updates each <code>number</code> entity's <code>min_value</code>, <code>max_value</code>, and <code>step</code> to the exact hardware limits of your boiler.
         </p>
         <pre><code>number:
@@ -881,8 +977,8 @@ text_sensor:
       - parameter: CP010
         name: "Zone 1 Flow Temperature Setpoint"</code></pre>
 
-        <h3>5. Writable Enum Parameters (<code>select</code>)</h3>
-        <p>
+        <h3 data-i18n="cfg_select_title">6. Writable Enum Parameters (<code>select</code>)</h3>
+        <p data-i18n="cfg_select_desc">
           Supports editing enumerated parameters (such as DHW operating mode or heating zone mode). Dropdown options are populated automatically at compile time from <code>obd_catalog.json</code>.
         </p>
         <pre><code>select:
@@ -896,33 +992,33 @@ text_sensor:
       </section>
 
       <section id="faq">
-        <h2>Frequently Asked Questions (FAQ)</h2>
+        <h2 data-i18n="sec_faq_title">Frequently Asked Questions (FAQ)</h2>
 
         <div class="faq-item">
-          <h3>Can I use Bluetooth (<code>bdr_ble</code>) at the same time as an OpenTherm or R-Bus thermostat?</h3>
-          <p>
+          <h3 data-i18n="faq1_q">Can I use Bluetooth (<code>bdr_ble</code>) at the same time as an OpenTherm or R-Bus thermostat?</h3>
+          <p data-i18n="faq1_a">
             <strong>Yes!</strong> Because <code>bdr_ble</code> communicates wirelessly over the boiler's built-in Bluetooth Low Energy interface, your physical <code>R-Bus</code> / <code>OpenTherm</code> / <code>L-Bus</code> terminals remain untouched. You can keep an ESPHome OpenTherm shield or physical room thermostat connected on the wired bus while using <code>bdr_ble</code> to read energy counters, water pressure, DHW tank temperature, and edit installer parameters.
           </p>
         </div>
 
         <div class="faq-item">
-          <h3>Do I need a BDR Thermea GTW-08 gateway, SMART TC, or extra hardware?</h3>
-          <p>
+          <h3 data-i18n="faq2_q">Do I need a BDR Thermea GTW-08 gateway, SMART TC, or extra hardware?</h3>
+          <p data-i18n="faq2_a">
             <strong>No.</strong> Any standard ESP32 board (such as <code>ESP32-C6</code>, <code>ESP32-S3</code>, or <code>ESP32-WROOM</code>) placed near the boiler connects directly to the built-in BLE module — the same interface used by installers with the <em>De Dietrich PRO</em> / <em>Baxi</em> / <em>Remeha Service Tool</em> smartphone app.
           </p>
         </div>
 
         <div class="faq-item">
-          <h3>How do I find my boiler's Bluetooth MAC address?</h3>
-          <p>
+          <h3 data-i18n="faq3_q">How do I find my boiler's Bluetooth MAC address?</h3>
+          <p data-i18n="faq3_a">
             Enable <code>esp32_ble_tracker:</code> in ESPHome or check any Bluetooth scanner app while near the boiler. BDR Thermea appliances advertise with a name starting with the controller board code followed by the serial number (for example <code>EHC-08_...</code> or <code>CU-GH08_...</code>) and manufacturer data <code>"BDR"</code> (<code>0x42 0x44 0x52</code>), typically with a MAC prefix <code>00:A0:50:XX:XX:XX</code>.
           </p>
         </div>
       </section>
 
       <section id="protocol">
-        <h2>Protocol Specification &amp; Links</h2>
-        <ul>
+        <h2 data-i18n="sec_proto_title">Protocol Specification &amp; Links</h2>
+        <ul data-i18n="sec_proto_links">
           <li><strong><a href="./configurator.html">Interactive ESPHome YAML Configurator</a></strong> — Filter all 3,092 datapoints by boiler board model, Function Group, or <code>BDR_SNAPSHOT</code> log.</li>
           <li><strong><a href="https://github.com/d-lebed/esphome-bdr-ble/blob/main/docs/PROTOCOL_SPECIFICATION.md">BDR Thermea / De Dietrich BLE Protocol Specification</a></strong> — Full reverse-engineered documentation of GATT services, Service 3 &amp; <code>RUB v2.01</code> 32-round TEA authentication, <code>DirectChannel</code> CRC-16/MODBUS framing, <code>GetListRequest (0x08)</code>, <code>WriteConfirmedRequest (0x04)</code>, and <code>0x502B</code> descriptors.</li>
           <li><strong><a href="https://github.com/d-lebed/esphome-bdr-ble/blob/main/example.yaml">Complete <code>example.yaml</code></a></strong> — Ready-to-use ESPHome configuration example.</li>
@@ -931,14 +1027,14 @@ text_sensor:
       </section>
 
       <section id="disclaimer">
-        <h2>Disclaimer, Assumption of Risk &amp; Legal Notice</h2>
-        <div class="callout callout-warn">
+        <h2 data-i18n="sec_disc_legal_title">Disclaimer, Assumption of Risk &amp; Legal Notice</h2>
+        <div class="callout callout-warn" data-i18n="legal_callout">
           <strong>PLEASE READ CAREFULLY BEFORE USING THIS SOFTWARE:</strong>
           <p style="margin: 6px 0 0;">
             Heating appliances, boilers, and heat pumps are high-power thermal, hydraulic, electrical, and/or gas-fired systems. Improper configuration or unauthorized third-party connections can cause severe equipment damage, water/frost damage, scalding, safety hazards, and <strong>immediate loss of manufacturer and installer warranty</strong>.
           </p>
         </div>
-        <ul>
+        <ul data-i18n="legal_list">
           <li><strong>Tested on One Model Only:</strong> All reverse-engineering and testing were performed exclusively on a single <strong>De Dietrich Strateo R32 (<code>EHC-08</code>)</strong> heat pump owned by the author. No other boiler or heat pump model has been tested.</li>
           <li><strong>Risk of Voiding Warranty:</strong> Connecting third-party hardware/software or authenticating with service/installer privileges (<code>auth_level: 4</code>) may be logged by the appliance controller and <strong>may void your manufacturer or installer warranty</strong>.</li>
           <li><strong>Parameter Writing Hazard:</strong> Writing parameters (via <code>number:</code> or <code>select:</code>) modifies internal controller settings in non-volatile memory (EEPROM/Flash). Writing invalid values or writing parameters too frequently from automations can wear out controller memory or cause dangerous operating conditions.</li>
@@ -958,6 +1054,184 @@ text_sensor:
       <a href="https://buymeacoffee.com/lebiadz" target="_blank" rel="noopener">☕ Buy me a coffee</a>
     </p>
   </footer>
+
+  <script src="./i18n/index_i18n.js"></script>
+  <script>
+    const LANG_STORAGE_KEY = "bdr_ble_lang";
+    const SUPPORTED_LANGS = ["en", "de", "fr", "nl", "pl", "it", "es"];
+    const EN_ORIGINAL = {};
+
+    function setPageLang(lang) {
+      if (!SUPPORTED_LANGS.includes(lang)) lang = "en";
+      try { localStorage.setItem(LANG_STORAGE_KEY, lang); } catch (_) {}
+      document.documentElement.lang = lang;
+
+      const sel = document.getElementById("lang-select");
+      if (sel && sel.value !== lang) sel.value = lang;
+
+      const dict = (window.BDR_INDEX_I18N && window.BDR_INDEX_I18N[lang]) || null;
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        if (!(key in EN_ORIGINAL)) {
+          EN_ORIGINAL[key] = el.innerHTML;
+        }
+        if (lang === "en") {
+          el.innerHTML = EN_ORIGINAL[key];
+        } else if (dict && dict[key]) {
+          el.innerHTML = dict[key];
+        }
+      });
+
+      buildAndSyncTocSubmenus();
+      updateScrollSpy();
+    }
+
+    function buildAndSyncTocSubmenus() {
+      const tocLinks = document.querySelectorAll(".toc > ul > li > a[href^='#']");
+      tocLinks.forEach(link => {
+        const li = link.parentElement;
+        li.classList.add("toc-item");
+        const secId = link.getAttribute("href").slice(1);
+        const section = document.getElementById(secId);
+        if (!section) return;
+
+        // Collect direct section > h3 or .faq-item > h3 headings
+        const subHeadings = Array.from(
+          section.querySelectorAll(":scope > h3, :scope > .faq-item > h3")
+        );
+        if (subHeadings.length === 0) return;
+
+        if (!link.querySelector(".toc-chevron")) {
+          const textSpan = document.createElement("span");
+          textSpan.innerHTML = link.innerHTML;
+          const chev = document.createElement("span");
+          chev.className = "toc-chevron";
+          chev.textContent = "▸";
+          link.innerHTML = "";
+          link.appendChild(textSpan);
+          link.appendChild(chev);
+        } else {
+          // Keep translated label text inside the first span
+          const firstSpan = link.querySelector("span:not(.toc-chevron)");
+          if (firstSpan && link.childNodes.length > 2) {
+            // If innerHTML was overwritten by setPageLang, restore chevron structure
+          }
+        }
+
+        let subUl = li.querySelector("ul.toc-sublist");
+        if (!subUl) {
+          subUl = document.createElement("ul");
+          subUl.className = "toc-sublist";
+          li.appendChild(subUl);
+        }
+        subUl.innerHTML = "";
+
+        subHeadings.forEach((h3, idx) => {
+          if (!h3.id) {
+            h3.id = secId + "-sub-" + (idx + 1);
+          }
+          const subLi = document.createElement("li");
+          const subA = document.createElement("a");
+          subA.className = "toc-sublink";
+          subA.href = "#" + h3.id;
+          subA.textContent = h3.textContent.replace(/\s+/g, " ").trim();
+          subLi.appendChild(subA);
+          subUl.appendChild(subLi);
+        });
+      });
+
+      // Ensure chevrons stay intact after data-i18n updates on top-level TOC links
+      tocLinks.forEach(link => {
+        const li = link.parentElement;
+        if (li.querySelector("ul.toc-sublist") && !link.querySelector(".toc-chevron")) {
+          const labelHtml = link.innerHTML;
+          link.innerHTML = "<span>" + labelHtml + "</span><span class=\"toc-chevron\">▸</span>";
+        }
+      });
+    }
+
+    function updateScrollSpy() {
+      const sections = Array.from(document.querySelectorAll("main.content > section[id]"));
+      if (sections.length === 0) return;
+
+      const triggerY = 140;
+      let activeSection = sections[0];
+
+      // If scrolled to the very bottom of the page, highlight the last section
+      if ((window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 24)) {
+        activeSection = sections[sections.length - 1];
+      } else {
+        for (const sec of sections) {
+          const rect = sec.getBoundingClientRect();
+          if (rect.top <= triggerY) {
+            activeSection = sec;
+          } else {
+            break;
+          }
+        }
+      }
+
+      const activeId = activeSection.id;
+
+      // Update sidebar TOC items & expand active submenu
+      document.querySelectorAll(".toc li.toc-item").forEach(li => {
+        const a = li.querySelector(":scope > a[href^='#']");
+        const isCurrent = a && a.getAttribute("href") === ("#" + activeId);
+        li.classList.toggle("active", !!isCurrent);
+
+        const subLinks = Array.from(li.querySelectorAll("a.toc-sublink"));
+        if (!isCurrent || subLinks.length === 0) {
+          subLinks.forEach(sl => sl.classList.remove("active"));
+          return;
+        }
+
+        // Determine active h3 inside the active section
+        let activeSubId = null;
+        for (const sl of subLinks) {
+          const targetId = sl.getAttribute("href").slice(1);
+          const h3 = document.getElementById(targetId);
+          if (h3 && h3.getBoundingClientRect().top <= 180) {
+            activeSubId = targetId;
+          }
+        }
+        if (!activeSubId && subLinks.length > 0) {
+          activeSubId = subLinks[0].getAttribute("href").slice(1);
+        }
+        subLinks.forEach(sl => {
+          sl.classList.toggle("active", sl.getAttribute("href") === ("#" + activeSubId));
+        });
+      });
+
+      // Also highlight matching top navbar link
+      document.querySelectorAll(".nav-links a.nav-item[href^='#']").forEach(navA => {
+        navA.classList.toggle("active", navA.getAttribute("href") === ("#" + activeId));
+      });
+    }
+
+    let scrollTicking = false;
+    window.addEventListener("scroll", () => {
+      if (!scrollTicking) {
+        window.requestAnimationFrame(() => {
+          updateScrollSpy();
+          scrollTicking = false;
+        });
+        scrollTicking = true;
+      }
+    }, { passive: true });
+
+    (function initLang() {
+      const params = new URLSearchParams(window.location.search);
+      let lang = params.get("lang");
+      if (!lang) {
+        try { lang = localStorage.getItem(LANG_STORAGE_KEY); } catch (_) {}
+      }
+      if (!lang) {
+        const nav = (navigator.language || "").toLowerCase().slice(0, 2);
+        lang = SUPPORTED_LANGS.includes(nav) ? nav : "en";
+      }
+      setPageLang(lang);
+    })();
+  </script>
 
 </body>
 </html>

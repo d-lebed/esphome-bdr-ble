@@ -6,6 +6,8 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/lebiadz)
 
+🌐 **Language:** **English** | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Nederlands](./README.nl.md) | [Polski](./README.pl.md) | [Italiano](./README.it.md) | [Español](./README.es.md)
+
 An **ESPHome external component (`bdr_ble`)** for monitoring and controlling **BDR Thermea Group** heat pumps, condensing boilers, and thermodynamic water heaters (**De Dietrich**, **Baxi**, **Remeha**, **Brötje**, **Chappée**, **Oertli**) in **Home Assistant** over **Bluetooth Low Energy (BLE)**.
 
 Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Bluetooth interface** (the same BLE interface used by the official *De Dietrich PRO*, *Baxi Service Tool*, and *Remeha Smart Service* mobile apps) using any standard **ESP32** (`ESP32`, `ESP32-S3`, `ESP32-C3`, `ESP32-C6`) — **no proprietary `GTW-08` gateway or wiring required**, and your existing **OpenTherm / R-Bus** room thermostat remains untouched.
@@ -55,7 +57,7 @@ See [`example.yaml`](./example.yaml) and the **[Full Documentation](https://d-le
 
 ```yaml
 external_components:
-  - source: github://d-lebed/esphome-bdr-ble@v1.2.0
+  - source: github://d-lebed/esphome-bdr-ble@v1.3.0
     components: [bdr_ble]
 
 esp32:

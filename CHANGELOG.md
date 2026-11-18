@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-11-18
+
+### Added
+- **7-Language Localization (`EN`, `DE`, `FR`, `NL`, `PL`, `IT`, `ES`):**
+  - Added localized README files (`README.de.md`, `README.fr.md`, `README.nl.md`, `README.pl.md`, `README.it.md`, `README.es.md`).
+  - Added external UI translation bundles (`docs/i18n/index_i18n.js` and `docs/i18n/configurator_ui_i18n.js`) and on-demand catalog translation dictionaries (`docs/i18n/{de,fr,nl,pl,it,es}.{js,json}`) covering all 3,092 datapoints, 233 Function Groups, and 204 Enum tables without increasing ESPHome firmware size.
+  - Added a flag dropdown language selector to `docs/index.html` and `docs/configurator.html` with `localStorage` persistence and localized YAML `name:` generation.
+- **Interactive Scrollspy & Collapsible Submenus (`docs/index.html`):**
+  - Added real-time scrollspy highlighting for the sidebar Table of Contents and top navigation bar, automatically expanding subsection (`<h3>`) submenus for the active section.
+- **Gateway Stale Bond Eviction & 60s Lockout Backoff:**
+  - Automatically detects and clears stale local BLE bonds (`esp_ble_remove_bond_device`) when the boiler's `GTW-Blue` gateway evicts the oldest of its 3 pairing slots.
+  - Added exponential pairing backoff (`90s → 180s → 300s → 600s`) that pauses `ble_client` reconnect attempts so the gateway's 60-second `Repeated Attempts (0x56)` lockout window can expire cleanly.
+
+### Fixed
+- **Multi-Fragment `GetListRequest (0x08)` TX Pacing & Automatic Single-Read Fallback:**
+  - Fixed `DirectChannel` multi-fragment TX to pace 20-byte chunks (`1B seq + 19B payload`) via `ESP_GATTC_WRITE_CHAR_EVT` and start with the canonical `v2.00` header (`02 00 00 00 08 00 <count>`), enabling fast 16-item batch polling out of the box.
+  - Any scalar datapoint returning `status != 0x01` inside a batch `GetListResponse (0x09)` now automatically falls back to individual `ReadRequest (0x00)` polling instead of being disabled.
+
+---
+
 ## [1.2.0] - 2026-11-18
 
 ### Added
@@ -86,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v0.3.0...v1.0.0

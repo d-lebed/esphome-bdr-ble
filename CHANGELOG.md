@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Interactive YAML Constructor (`docs/configurator.html`):**
+  - Display all `Enum` values and `FunctionGroup` badges in full without truncating after 5 items (`...`).
+  - Improved responsive two-pane grid layout (`55% / 45%` on standard monitors, `52% / 48%` on wide monitors, and vertical stacking on narrow screens `< 1024px`) with `pre-wrap` YAML rendering so wide monitors no longer require horizontal scrolling in the YAML pane.
+
 ---
 
 ## [0.3.0] - 2026-11-18

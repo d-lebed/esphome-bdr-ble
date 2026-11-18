@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Published the interactive ESPHome YAML Constructor on GitHub Pages (`https://d-lebed.github.io/esphome-bdr-ble/`).
+- **Configurator Access Level Filter, View Tabs & `localStorage` Persistence (`docs/configurator.html`):**
+  - Added `auth_level` (`L1 End User` .. `L4 Lab/OEM`) safety filter, row badges, and automatic minimum required `auth_level` calculation in the YAML generator.
+  - Added segmented view tabs (`All Matching`, `Selected Only`, `Writable`, `Read-Only`) for easier selection review.
+  - Added automatic `localStorage` state persistence across page reloads and a `Reset Defaults` button.
+  - Enriched `obd_catalog.json` with `lvl` (`1..4`) metadata from `0x502B:01..15` and added `@<level>` tags to `BDR_SNAPSHOT:` log output.
+- Published the interactive ESPHome YAML Constructor and SEO-optimized documentation site on GitHub Pages (`https://d-lebed.github.io/esphome-bdr-ble/`).
 
 ---
 

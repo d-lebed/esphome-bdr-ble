@@ -499,16 +499,17 @@ void BdrBleComponent::handle_snapshot_descriptor_(uint8_t sub_index,
       }
     }
 #endif
-    uint32_t packed = (static_cast<uint32_t>(dp_idx) << 8) | dp_sub;
+    uint8_t dp_lvl = ((sub_index - 1) % 5) + 1;
+    uint32_t packed_key = (static_cast<uint32_t>(dp_idx) << 8) | dp_sub;
     bool exists = false;
     for (uint32_t existing : this->discovered_datapoints_) {
-      if (existing == packed) {
+      if ((existing >> 8) == packed_key) {
         exists = true;
         break;
       }
     }
     if (!exists) {
-      this->discovered_datapoints_.push_back(packed);
+      this->discovered_datapoints_.push_back((packed_key << 8) | dp_lvl);
     }
     parsed++;
   }
@@ -529,14 +530,16 @@ void BdrBleComponent::log_appliance_snapshot_() {
   int pos = snprintf(line, sizeof(line), "BDR_SNAPSHOT:");
   for (size_t i = 0; i < this->discovered_datapoints_.size(); i++) {
     uint16_t idx =
-        static_cast<uint16_t>((this->discovered_datapoints_[i] >> 8) & 0xFFFF);
-    uint8_t sub = static_cast<uint8_t>(this->discovered_datapoints_[i] & 0xFF);
-    if (pos > 175) {
+        static_cast<uint16_t>((this->discovered_datapoints_[i] >> 16) & 0xFFFF);
+    uint8_t sub =
+        static_cast<uint8_t>((this->discovered_datapoints_[i] >> 8) & 0xFF);
+    uint8_t lvl = static_cast<uint8_t>(this->discovered_datapoints_[i] & 0xFF);
+    if (pos > 170) {
       ESP_LOGI(TAG, "%s", line);
       pos = snprintf(line, sizeof(line), "BDR_SNAPSHOT:");
     }
-    pos += snprintf(line + pos, sizeof(line) - pos, "%s%04X:%02X",
-                    (pos > 13) ? "," : "", idx, sub);
+    pos += snprintf(line + pos, sizeof(line) - pos, "%s%04X:%02X@%u",
+                    (pos > 13) ? "," : "", idx, sub, lvl);
   }
   if (pos > 13) {
     ESP_LOGI(TAG, "%s", line);

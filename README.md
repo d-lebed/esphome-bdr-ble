@@ -4,6 +4,7 @@
 [![Interactive YAML Configurator](https://img.shields.io/badge/configurator-Interactive%20YAML%20Builder-22c55e?style=flat-square)](https://d-lebed.github.io/esphome-bdr-ble/configurator.html)
 [![Release](https://img.shields.io/github/v/release/d-lebed/esphome-bdr-ble?style=flat-square)](https://github.com/d-lebed/esphome-bdr-ble/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?style=flat-square&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/lebiadz)
 
 An **ESPHome external component (`bdr_ble`)** for monitoring and controlling **BDR Thermea Group** heat pumps, condensing boilers, and thermodynamic water heaters (**De Dietrich**, **Baxi**, **Remeha**, **Brötje**, **Chappée**, **Oertli**) in **Home Assistant** over **Bluetooth Low Energy (BLE)**.
 

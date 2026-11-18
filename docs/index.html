@@ -178,6 +178,27 @@
       border-color: var(--accent-hover);
       color: #fff;
     }
+    .bmc-link {
+      display: inline-flex;
+      align-items: center;
+      position: relative;
+      top: 1px;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+    }
+    .bmc-link:hover {
+      filter: brightness(1.06);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(255, 221, 0, 0.25);
+    }
+    .bmc-link img {
+      height: 39px;
+      width: auto;
+      border-radius: 8px;
+      display: block;
+      cursor: pointer;
+    }
 
     /* Hero Banner */
     .hero {
@@ -439,6 +460,7 @@
       <a class="nav-item" href="#faq">FAQ</a>
       <a class="btn btn-primary" href="./configurator.html">⚡ Open YAML Configurator</a>
       <a class="btn" href="https://github.com/d-lebed/esphome-bdr-ble" target="_blank" rel="noopener">GitHub</a>
+      <a class="bmc-link" href="https://www.buymeacoffee.com/lebiadz" target="_blank" rel="noopener" title="Buy Me a Coffee"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" /></a>
     </div>
   </nav>
 
@@ -932,7 +954,8 @@ text_sensor:
     <p>
       <strong>esphome-bdr-ble</strong> · Open-Source ESPHome Component for BDR Thermea / De Dietrich / Baxi / Remeha BLE Appliances ·
       <a href="./configurator.html">YAML Configurator</a> ·
-      <a href="https://github.com/d-lebed/esphome-bdr-ble">GitHub Repository</a>
+      <a href="https://github.com/d-lebed/esphome-bdr-ble">GitHub Repository</a> ·
+      <a href="https://buymeacoffee.com/lebiadz" target="_blank" rel="noopener">☕ Buy me a coffee</a>
     </p>
   </footer>
 

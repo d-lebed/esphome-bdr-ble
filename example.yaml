@@ -78,3 +78,24 @@ text_sensor:
   - platform: bdr_ble
     status:
       name: "BLE Status"
+
+number:
+  # Writable numeric parameters (min/max/step are also automatically refined from boiler 0x502B descriptors)
+  - platform: bdr_ble
+    update_interval: 30s
+    numbers:
+      - parameter: DP070
+        name: "Strateo DHW Comfort Setpoint"
+        min_value: 35
+        max_value: 65
+        step: 0.5
+        mode: box
+
+select:
+  # Writable enum parameters (options auto-populated at compile time from obd_catalog.json)
+  - platform: bdr_ble
+    update_interval: 30s
+    selects:
+      - parameter: DP200
+        name: "Strateo DHW Operating Mode"
+

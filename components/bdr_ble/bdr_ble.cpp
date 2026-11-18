@@ -18,6 +18,9 @@ void BdrBleComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "BDR Thermea BLE Boiler Controller:");
   ESP_LOGCONFIG(TAG, "  Default Node ID: 0x%02X", this->default_node_id_);
   ESP_LOGCONFIG(TAG, "  Auth Level: %u", this->auth_level_);
+  if (this->has_pin_) {
+    ESP_LOGCONFIG(TAG, "  PIN: ****%02u", static_cast<unsigned>(this->pin_ % 100));
+  }
   ESP_LOGCONFIG(TAG, "  Poll Groups: %zu", this->poll_groups_.size());
   for (size_t i = 0; i < this->poll_groups_.size(); i++) {
     ESP_LOGCONFIG(TAG, "    Group %zu: interval=%ums, datapoints=%zu", i,
@@ -170,6 +173,75 @@ void BdrBleComponent::publish_status_(const char *msg) {
     this->status_text_->publish_state(msg);
   }
 #endif
+}
+
+void BdrBleComponent::handle_pairing_failure_(const uint8_t *bda,
+                                              uint8_t reason) {
+  bool had_bond = false;
+  int bond_num = esp_ble_get_bond_device_num();
+  if (bond_num > 0 && bda != nullptr) {
+    std::vector<esp_ble_bond_dev_t> bond_list(bond_num);
+    if (esp_ble_get_bond_device_list(&bond_num, bond_list.data()) == ESP_OK) {
+      for (int i = 0; i < bond_num; i++) {
+        if (std::memcmp(bond_list[i].bd_addr, bda, 6) == 0) {
+          had_bond = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // The appliance's GTW-Blue gateway stores at most 3 paired devices and evicts
+  // the oldest bond when a 4th device pairs. If we already had a local bond and
+  // encryption failed with a non-transient error, remove our stale bond so the
+  // next connection attempt performs a fresh Passkey pairing.
+  if (had_bond && !is_transient_ble_auth_failure(reason)) {
+    ESP_LOGW(TAG,
+             "Stored BLE bond rejected by gateway (reason=0x%02X: %s); "
+             "removing stale local bond to re-pair cleanly",
+             reason, ble_auth_fail_reason_str(reason));
+    esp_bd_addr_t addr;
+    std::memcpy(addr, bda, 6);
+    esp_ble_remove_bond_device(addr);
+  } else if (reason == 0x51 || reason == 0x4E) {
+    ESP_LOGE(TAG,
+             "BLE Passkey rejected (0x%02X: %s) — verify your 6-digit PIN in YAML",
+             reason, ble_auth_fail_reason_str(reason));
+  }
+
+  // After a failed pairing, the gateway locks out new pairing attempts for 60 seconds
+  // (returning 0x56 Repeated Attempts if retried early). Pause ble_client for 90..600s.
+  size_t idx = (this->pairing_fail_count_ < 4) ? this->pairing_fail_count_ : 3;
+  uint32_t wait_s = PAIRING_BACKOFF_SECONDS[idx];
+  if (this->pairing_fail_count_ < 255) {
+    this->pairing_fail_count_++;
+  }
+
+  this->pairing_failed_ = true;
+  this->pairing_backoff_active_ = true;
+  this->pairing_backoff_until_ms_ = millis() + wait_s * 1000UL;
+  this->state_ = STATE_DISCONNECTED;
+  this->active_group_idx_ = -1;
+  this->in_flight_type_ = IN_FLIGHT_NONE;
+  this->tx_frame_buf_.clear();
+  this->tx_frame_offset_ = 0;
+  this->tx_seg_idx_ = 0;
+  this->tx_in_progress_ = false;
+  this->rx_reassembly_buf_.clear();
+  this->expected_rx_seg_ = 0;
+  this->write_queue_.clear();
+
+  char msg[96];
+  snprintf(msg, sizeof(msg), "Pairing failed (0x%02X: %s) — retry in %us",
+           reason, ble_auth_fail_reason_str(reason),
+           static_cast<unsigned>(wait_s));
+  ESP_LOGW(TAG, "%s (attempt %u)", msg,
+           static_cast<unsigned>(this->pairing_fail_count_));
+  this->publish_status_(msg);
+
+  if (this->parent() != nullptr) {
+    this->parent()->set_enabled(false);
+  }
 }
 
 void BdrBleComponent::log_rx_hex_(const char *prefix, const uint8_t *data,
@@ -333,6 +405,8 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
       if (param->open.status == ESP_GATT_OK) {
         this->state_ = STATE_CONNECTED_WAIT_SEC;
         this->pairing_failed_ = false;
+        this->pairing_backoff_active_ = false;
+        this->auth_cmpl_handled_ = false;
         this->cccd_step_ = 0;
         this->retry_count_ = 0;
         this->consecutive_timeouts_ = 0;
@@ -384,7 +458,9 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
       this->rx_reassembly_buf_.clear();
       this->expected_rx_seg_ = 0;
       this->write_queue_.clear();
-      this->publish_status_("Disconnected");
+      if (!this->pairing_backoff_active_) {
+        this->publish_status_("Disconnected");
+      }
       break;
 
     case ESP_GATTC_WRITE_CHAR_EVT:
@@ -443,30 +519,47 @@ void BdrBleComponent::gap_event_handler(esp_gap_ble_cb_event_t event,
                     this->parent()->get_remote_bda(), 6) != 0) {
       return;
     }
+    if (this->auth_cmpl_handled_) {
+      return;
+    }
+    this->auth_cmpl_handled_ = true;
+
     if (param->ble_security.auth_cmpl.success) {
       ESP_LOGI(TAG, "BLE link encrypted; subscribing to GATT notifications");
       this->pairing_failed_ = false;
+      this->pairing_fail_count_ = 0;
+      this->pairing_backoff_active_ = false;
       if (this->state_ == STATE_CONNECTED_WAIT_SEC) {
         this->state_ = STATE_SUBSCRIBING;
         this->cccd_step_ = 0;
         this->last_action_ms_ = millis();
       }
     } else {
-      ESP_LOGW(TAG, "BLE pairing/encryption failed: reason=0x%02X",
-               param->ble_security.auth_cmpl.fail_reason);
-      this->pairing_failed_ = true;
-      this->state_ = STATE_AUTH_FAILED;
-      this->last_action_ms_ = millis();
-      this->publish_status_("BLE Pairing Failed");
+      this->handle_pairing_failure_(param->ble_security.auth_cmpl.bd_addr,
+                                    param->ble_security.auth_cmpl.fail_reason);
     }
   }
 }
 
 void BdrBleComponent::loop() {
-  if (this->state_ == STATE_DISCONNECTED || this->parent() == nullptr) {
+  if (this->parent() == nullptr) {
     return;
   }
   const uint32_t now = millis();
+
+  if (this->pairing_backoff_active_) {
+    if (static_cast<int32_t>(now - this->pairing_backoff_until_ms_) >= 0) {
+      this->pairing_backoff_active_ = false;
+      ESP_LOGI(TAG, "BLE pairing backoff elapsed; re-enabling BLE client");
+      this->publish_status_("Retrying BLE connection...");
+      this->parent()->set_enabled(true);
+    }
+    return;
+  }
+
+  if (this->state_ == STATE_DISCONNECTED) {
+    return;
+  }
 
   if (this->state_ == STATE_AUTH_FAILED) {
     if (!this->pairing_failed_ && (now - this->last_action_ms_ >= AUTH_COOLDOWN_MS)) {
@@ -481,10 +574,10 @@ void BdrBleComponent::loop() {
   }
 
   if (this->state_ == STATE_CONNECTED_WAIT_SEC) {
-    if (!this->pairing_failed_ && (now - this->last_action_ms_ > 10000)) {
-      this->state_ = STATE_SUBSCRIBING;
-      this->cccd_step_ = 0;
-      this->last_action_ms_ = now;
+    if (now - this->last_action_ms_ >= PAIRING_TIMEOUT_MS) {
+      ESP_LOGW(TAG, "BLE pairing/encryption timed out after %ums",
+               static_cast<unsigned>(PAIRING_TIMEOUT_MS));
+      this->handle_pairing_failure_(this->parent()->get_remote_bda(), 0x63);
     }
     return;
   }

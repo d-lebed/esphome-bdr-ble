@@ -54,6 +54,8 @@ inline constexpr uint8_t SNAPSHOT_MAX_SUB_INDEX = 15;
 inline constexpr uint32_t HANDSHAKE_TIMEOUT_MS = 3000;
 inline constexpr uint32_t REQUEST_TIMEOUT_MS = 1500;
 inline constexpr uint32_t AUTH_COOLDOWN_MS = 30000;
+inline constexpr uint32_t PAIRING_TIMEOUT_MS = 30000;
+inline constexpr uint32_t PAIRING_BACKOFF_SECONDS[4] = {90, 180, 300, 600};
 inline constexpr uint32_t MIN_TX_INTERVAL_MS = 60;
 inline constexpr size_t MAX_WRITE_QUEUE_SIZE = 16;
 inline constexpr uint8_t MAX_CONSECUTIVE_TIMEOUTS = 10;
@@ -96,5 +98,11 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
 /// Encode a scaled float value into Little-Endian wire bytes according to BdrDataType.
 bool encode_numeric_datapoint(BdrDataType data_type, float scale, float value,
                               std::vector<uint8_t> &out_bytes);
+
+/// Return human-readable description for ESP-IDF BLE SMP authentication failure reason (0x4D + SMP code).
+const char *ble_auth_fail_reason_str(uint8_t reason);
+
+/// Return true if BLE auth failure is a transient timeout/busy error where stored bond key is still valid.
+bool is_transient_ble_auth_failure(uint8_t reason);
 
 }  // namespace esphome::bdr_ble

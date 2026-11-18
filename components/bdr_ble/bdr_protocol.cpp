@@ -222,4 +222,41 @@ bool encode_numeric_datapoint(BdrDataType data_type, float scale, float value,
   }
 }
 
+const char *ble_auth_fail_reason_str(uint8_t reason) {
+  switch (reason) {
+    case 0x4E:
+      return "Passkey Entry Failed";
+    case 0x50:
+      return "Authentication Requirements";
+    case 0x51:
+      return "Confirm Value Failed (wrong PIN?)";
+    case 0x52:
+      return "Pairing Not Supported";
+    case 0x53:
+      return "Encryption Key Size";
+    case 0x55:
+      return "Unspecified Reason";
+    case 0x56:
+      return "Repeated Attempts (60s gateway lockout)";
+    case 0x57:
+      return "Invalid Parameters";
+    case 0x58:
+      return "DHKey Check Failed";
+    case 0x60:
+      return "SMP Busy";
+    case 0x61:
+      return "Encryption Failed (stale bond?)";
+    case 0x63:
+      return "SMP Response Timeout";
+    case 0x66:
+      return "Connection Timeout";
+    default:
+      return "SMP Error";
+  }
+}
+
+bool is_transient_ble_auth_failure(uint8_t reason) {
+  return reason == 0x60 || reason == 0x63 || reason == 0x66;
+}
+
 }  // namespace esphome::bdr_ble

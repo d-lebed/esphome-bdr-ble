@@ -158,6 +158,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                                                   BdrDataType data_type, float scale);
 
   void publish_status_(const char *msg);
+  void handle_pairing_failure_(const uint8_t *bda, uint8_t reason);
   void log_rx_hex_(const char *prefix, const uint8_t *data, uint16_t len,
                    bool info_level = false);
 
@@ -193,6 +194,10 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint32_t pin_{0};
   bool has_pin_{false};
   bool pairing_failed_{false};
+  bool auth_cmpl_handled_{false};
+  uint8_t pairing_fail_count_{0};
+  bool pairing_backoff_active_{false};
+  uint32_t pairing_backoff_until_ms_{0};
   uint32_t last_action_ms_{0};
   uint8_t cccd_step_{0};
   uint8_t retry_count_{0};

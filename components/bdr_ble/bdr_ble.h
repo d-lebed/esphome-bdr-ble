@@ -10,6 +10,9 @@
 #ifdef USE_SENSOR
 #include "esphome/components/sensor/sensor.h"
 #endif
+#ifdef USE_BINARY_SENSOR
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#endif
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
@@ -49,6 +52,9 @@ struct DatapointRegistration {
 #ifdef USE_SENSOR
   std::vector<sensor::Sensor *> sensors;
 #endif
+#ifdef USE_BINARY_SENSOR
+  std::vector<binary_sensor::BinarySensor *> binary_sensors;
+#endif
 #ifdef USE_TEXT_SENSOR
   std::vector<text_sensor::TextSensor *> text_sensors;
 #endif
@@ -85,6 +91,12 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void register_sensor(sensor::Sensor *sens, uint16_t index, uint8_t sub_index,
                        uint8_t data_type, float scale, uint32_t interval_ms,
                        uint8_t node_id = 0xFF);
+#endif
+
+#ifdef USE_BINARY_SENSOR
+  void register_binary_sensor(binary_sensor::BinarySensor *bsens, uint16_t index,
+                              uint8_t sub_index, uint8_t data_type,
+                              uint32_t interval_ms, uint8_t node_id = 0xFF);
 #endif
 
 #ifdef USE_TEXT_SENSOR

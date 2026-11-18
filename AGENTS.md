@@ -36,6 +36,8 @@ components/bdr_ble/
 ├── bdr_protocol.h / .cpp               # Protocol constants, CRC16, 32-round TEA cipher, and value codecs
 ├── bdr_ble.h / .cpp                    # BdrBleComponent lifecycle, BLE GATT/GAP state machine, TX & scheduler
 ├── bdr_ble_parser.cpp                  # RX DirectChannel reassembly, RUB auth, 0x502B snapshot & state dispatch
+├── binary_sensor/
+│   └── __init__.py                     # Boolean/two-state status binary_sensor platform (single & grouped syntax)
 ├── number/
 │   ├── __init__.py                     # Writable numeric parameter platform (single & grouped syntax)
 │   └── bdr_ble_number.h / .cpp         # BdrBleNumber entity class (Parented<BdrBleComponent>)

@@ -31,7 +31,7 @@ Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Blu
 - **100% Wireless over BLE:** Leaves your physical `R-Bus` / `OpenTherm` / `L-Bus` terminals completely free.
 - **Automatic Passkey Bonding & Configurable Access Level (`auth_level: 1..4`):** Automatically pairs with your 6-digit boiler PIN and unlocks GATT Service 3 + CAN-BUS `RUB v2.01` at your chosen access level (`1` = End User Safe, `2` = Installer Standard, `3` = Service, `4` = Lab/OEM).
 - **Read & Write Support:**
-  - `sensor` & `text_sensor`: Read temperatures, water pressure, status enums, and kWh energy consumption/delivery counters.
+  - `sensor`, `binary_sensor` & `text_sensor`: Read temperatures, water pressure, boolean status flags (`HM012`, `HM013`, `AM015`), status enums, and kWh energy consumption/delivery counters.
   - `number` & `select`: Edit numeric setpoints (e.g., DHW comfort/eco temperature, flow setpoints) and enum operating modes (`WriteConfirmedRequest 0x04`) with automatic hardware range discovery from `0x502B`.
 - **Zero Firmware Bloat & High-Speed Batching:** Resolves menu codes (`AM027`, `DM001`, `AC005`, `DP070`) at compile time, batches requests via `GetListRequest (0x08)`, and automatically skips unsupported datapoints (`Auto-Skip`).
 

@@ -79,6 +79,15 @@ text_sensor:
     status:
       name: "BLE Status"
 
+binary_sensor:
+  - platform: bdr_ble
+    update_interval: 10s
+    binary_sensors:
+      - parameter: HM012
+        name: "First stage of backup operation"
+      - parameter: HM013
+        name: "Second stage of backup operation"
+
 number:
   # Writable numeric parameters (min/max/step are also automatically refined from boiler 0x502B descriptors)
   - platform: bdr_ble

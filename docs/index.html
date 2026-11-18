@@ -808,7 +808,22 @@ text_sensor:
       - parameter: varApTotalEnergyDelivery
         name: "Strateo Total Thermal Energy Delivered"</code></pre>
 
-        <h3>3. Text Sensors (<code>text_sensor</code>)</h3>
+        <h3>3. Binary Sensors (<code>binary_sensor</code>)</h3>
+        <p>
+          Supports polling boolean / two-state status signals (such as <code>HM012</code> / <code>HM013</code> backup heater stages, <code>AM015</code> system pump running, <code>HM008</code> compressor running, <code>HM009</code> defrost active, or <code>DM000</code> DHW electrical backup) as Home Assistant <code>binary_sensor</code> entities (<code>0 = OFF</code>, <code>!= 0 = ON</code>).
+        </p>
+        <pre><code>binary_sensor:
+  - platform: bdr_ble
+    update_interval: 10s
+    binary_sensors:
+      - parameter: HM012
+        name: "First stage of backup operation"
+      - parameter: HM013
+        name: "Second stage of backup operation"
+      - parameter: AM015
+        name: "System pump running"</code></pre>
+
+        <h3>4. Text Sensors (<code>text_sensor</code>)</h3>
         <p>
           Provides the <code>status</code> diagnostic sensor and decoded <code>Enum</code>, <code>VisibleString</code>, <code>OctetString</code>, and <code>TimeOfDay</code> datapoints:
         </p>

@@ -1,5 +1,6 @@
 #include "bdr_ble.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -415,6 +416,11 @@ void BdrBleComponent::mark_datapoint_unsupported_(uint8_t node_id,
           entity_name = dp.sensors[0]->get_name().c_str();
         }
 #endif
+#ifdef USE_BINARY_SENSOR
+        if (!dp.binary_sensors.empty() && dp.binary_sensors[0] != nullptr) {
+          entity_name = dp.binary_sensors[0]->get_name().c_str();
+        }
+#endif
 #ifdef USE_TEXT_SENSOR
         if (!dp.text_sensors.empty() && dp.text_sensors[0] != nullptr) {
           entity_name = dp.text_sensors[0]->get_name().c_str();
@@ -572,6 +578,17 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
       if (valid_numeric) {
         for (auto *sens : dp.sensors) {
           sens->publish_state(numeric_val);
+        }
+      }
+#endif
+
+#ifdef USE_BINARY_SENSOR
+      if (valid_numeric) {
+        bool bval = (dp.data_type == BDR_TYPE_ENUM)
+                        ? (raw_enum_val != 0)
+                        : (std::fabs(numeric_val) > 1e-6f);
+        for (auto *bsens : dp.binary_sensors) {
+          bsens->publish_state(bval);
         }
       }
 #endif

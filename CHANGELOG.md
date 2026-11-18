@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Binary Sensor Platform (`binary_sensor`):**
+  - Added `components/bdr_ble/binary_sensor/` platform for polling boolean / two-state status signals (`OffOn`, `InactiveActive`, `YesNo`, etc., such as `HM012`, `HM013`, `AM015`, `HM008`, `DM000`) as `binary_sensor` entities (`0 = OFF`, `!= 0 = ON`).
+  - Updated `docs/configurator.html` to default read-only boolean-enum signals to `binary_sensor` and generate `binary_sensor:` YAML blocks.
+
 ---
 
 ## [1.1.0] - 2026-11-18

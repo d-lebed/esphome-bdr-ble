@@ -75,6 +75,17 @@ void BdrBleComponent::register_sensor(sensor::Sensor *sens, uint16_t index,
 }
 #endif
 
+#ifdef USE_BINARY_SENSOR
+void BdrBleComponent::register_binary_sensor(
+    binary_sensor::BinarySensor *bsens, uint16_t index, uint8_t sub_index,
+    uint8_t data_type, uint32_t interval_ms, uint8_t node_id) {
+  auto &dp = this->get_or_create_datapoint_(
+      interval_ms, node_id, index, sub_index,
+      static_cast<BdrDataType>(data_type), 1.0f);
+  dp.binary_sensors.push_back(bsens);
+}
+#endif
+
 #ifdef USE_TEXT_SENSOR
 void BdrBleComponent::register_text_sensor(text_sensor::TextSensor *sens,
                                            uint16_t index, uint8_t sub_index,

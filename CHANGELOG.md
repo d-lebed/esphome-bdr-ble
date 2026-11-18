@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] - 2026-11-18
+
 ### Added
 - **Binary Sensor Platform (`binary_sensor`):**
   - Added `components/bdr_ble/binary_sensor/` platform for polling boolean / two-state status signals (`OffOn`, `InactiveActive`, `YesNo`, etc., such as `HM012`, `HM013`, `AM015`, `HM008`, `DM000`) as `binary_sensor` entities (`0 = OFF`, `!= 0 = ON`).
   - Updated `docs/configurator.html` to default read-only boolean-enum signals to `binary_sensor` and generate `binary_sensor:` YAML blocks.
+- **Snapshot Array Element Expansion & Breakdown (`docs/configurator.html`):**
+  - Dynamically synthesizes rows for array sub-elements (`SubIndex >= 2`, such as `CP080 [2]..[6]`, `CP140 [2]..[6]`, `AP111 [2]`) reported in `BDR_SNAPSHOT:` logs and emits `sub_index:` in the generated YAML.
+  - Displays an exact breakdown of configurable items vs. hidden composite `Struct` schedule tables in the snapshot status badge.
 
 ---
 
@@ -79,7 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/d-lebed/esphome-bdr-ble/releases/tag/v0.3.0

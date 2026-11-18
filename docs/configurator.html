@@ -899,9 +899,7 @@
       const lines = [];
       if (fullConfig) {
         lines.push("external_components:");
-        lines.push("  - source:");
-        lines.push("      type: local");
-        lines.push("      path: components");
+        lines.push("  - source: github://d-lebed/esphome-bdr-ble");
         lines.push("    components: [bdr_ble]");
         lines.push("");
         lines.push("esp32_ble:");

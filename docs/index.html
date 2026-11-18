@@ -753,9 +753,9 @@
           <li>Flash the ESP32 with <code>pin: !secret strateo_ble_pin</code> under <code>bdr_ble:</code>. Upon connecting, <code>bdr_ble</code> automatically bonds using your PIN, saves the LTK key in ESP32 NVS flash, and unlocks Service 3 + CAN-BUS <code>RUB v2.01</code>.</li>
         </ol>
 
-        <h3 data-i18n="reqs_gtwiot_title">Route B: External <code>GTW-IoT</code> Home Hub — Without PIN</h3>
+        <h3 data-i18n="reqs_gtwiot_title">Route B: External <code>GTW-IoT</code> Home Hub — Without PIN (Untested)</h3>
         <p data-i18n="reqs_gtwiot_desc">
-          Appliances using the external round <strong><code>GTW-IoT</code></strong> hub (advertising as <code>GTW-IOT_&lt;serial&gt;</code>, e.g., Remeha Confida 10) do not use BLE Passkey encryption. Simply <strong>omit the <code>pin:</code> option</strong> under <code>bdr_ble:</code> in your YAML, briefly press the button on the <code>GTW-IoT</code> hub to make it connectable, and <code>bdr_ble</code> will connect directly in plain BLE mode and perform the two-stage TEA unlock handshake.
+          Appliances using the external round <strong><code>GTW-IoT</code></strong> hub (advertising as <code>GTW-IOT_&lt;serial&gt;</code>, e.g., Remeha Confida 10) do not use BLE Passkey encryption. Simply <strong>omit the <code>pin:</code> option</strong> under <code>bdr_ble:</code> in your YAML, briefly press the button on the <code>GTW-IoT</code> hub to make it connectable, and <code>bdr_ble</code> will connect directly in plain BLE mode and perform the two-stage TEA unlock handshake <em>(note: implemented based on protocol specification, not physically tested by the author)</em>.
         </p>
 
         <h3 data-i18n="reqs_gateway_rules_title">Dynamic GATT UUID Discovery &amp; Gateway Auto-Recovery</h3>

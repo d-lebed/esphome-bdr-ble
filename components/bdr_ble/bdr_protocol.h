@@ -26,6 +26,7 @@ inline constexpr uint16_t HANDLE_SVC3_ACK_CCCD = 39;
 // DirectChannel & CAN-IP / RUB v2.01 protocol constants
 inline constexpr uint8_t DIRECT_CHANNEL_CAN = 0x01;
 inline constexpr uint8_t SEGMENT_FINAL = 0xFF;
+inline constexpr size_t DIRECT_TX_MAX_CHUNK_DATA = 19;  // 1B seq + 19B payload = 20B BLE packet
 
 inline constexpr uint8_t MSG_TYPE_SDO = 0x00;
 inline constexpr uint8_t MSG_TYPE_RUB_AUTH = 0x02;

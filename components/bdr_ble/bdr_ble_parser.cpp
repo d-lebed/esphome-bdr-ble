@@ -395,7 +395,20 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
       this->dispatch_datapoint_value_(node_id, index, sub_index,
                                       payload + offset, data_len);
     } else {
-      this->mark_datapoint_unsupported_(node_id, index, sub_index, status);
+      // Some writable scalars are not served via bulk GetList and return status != 0x01.
+      // Fall back to single ReadRequest (0x00) for this datapoint instead of disabling it.
+      for (auto &grp : this->poll_groups_) {
+        for (auto &dp : grp.items) {
+          if (dp.node_id == node_id && dp.index == index &&
+              dp.sub_index == sub_index && !dp.single_read_only) {
+            dp.single_read_only = true;
+            ESP_LOGI(TAG,
+                     "Datapoint 0x%04X:%02X returned status=0x%02X in GetList; "
+                     "switching to single-read polling",
+                     index, sub_index, status);
+          }
+        }
+      }
     }
     offset += data_len;
   }

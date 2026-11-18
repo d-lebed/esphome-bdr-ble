@@ -49,6 +49,7 @@ struct DatapointRegistration {
   BdrDataType data_type{BDR_TYPE_U16};
   float scale{1.0f};
   bool unsupported{false};
+  bool single_read_only{false};
 #ifdef USE_SENSOR
   std::vector<sensor::Sensor *> sensors;
 #endif
@@ -163,6 +164,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void write_cccd_(uint16_t cccd_handle);
   void send_zero_length_write_(uint16_t char_handle);
   void send_direct_channel_(const uint8_t *payload, size_t len);
+  void send_next_tx_fragment_();
   void send_read_param_(uint8_t node_id, uint16_t index, uint8_t sub_index);
   void send_write_param_(uint8_t node_id, uint16_t index, uint8_t sub_index,
                          const uint8_t *data, size_t data_len);
@@ -207,8 +209,14 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint16_t in_flight_index_{0};
   uint8_t in_flight_sub_{0};
   uint32_t last_req_ms_{0};
-  uint8_t get_list_stage_{0};  // 0=try 02 01..03, 1=try 02 00..00, 2=confirmed, 3=fallback to single 0x00
+  uint8_t get_list_stage_{0};  // 0=try 02 00..00 (v2.00), 1=try 02 01..03 (v2.01), 2=confirmed, 3=fallback to single 0x00
+  bool get_list_use_v200_{true};
   uint16_t negotiated_mtu_{23};
+
+  std::vector<uint8_t> tx_frame_buf_;
+  size_t tx_frame_offset_{0};
+  uint8_t tx_seg_idx_{0};
+  bool tx_in_progress_{false};
 
   std::vector<uint8_t> rx_reassembly_buf_;
   uint8_t expected_rx_seg_{0};

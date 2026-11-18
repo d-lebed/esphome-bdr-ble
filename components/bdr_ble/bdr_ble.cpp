@@ -215,32 +215,43 @@ void BdrBleComponent::send_direct_channel_(const uint8_t *payload, size_t len) {
   if (this->parent() == nullptr || len == 0 || len > 512) {
     return;
   }
-  std::vector<uint8_t> frame = wrap_direct_channel_frame(payload, len);
+  this->tx_frame_buf_ = wrap_direct_channel_frame(payload, len);
+  this->tx_frame_offset_ = 0;
+  this->tx_seg_idx_ = 0;
+  this->tx_in_progress_ = true;
+  this->send_next_tx_fragment_();
+}
 
-  // Max payload per ATT write is (MTU - 3), minus 1 byte for segment header
-  size_t max_att_len = (this->negotiated_mtu_ > 23)
-                           ? static_cast<size_t>(this->negotiated_mtu_ - 3)
-                           : 20;
-  if (max_att_len > 244) {
-    max_att_len = 244;
+void BdrBleComponent::send_next_tx_fragment_() {
+  if (this->parent() == nullptr ||
+      this->tx_frame_offset_ >= this->tx_frame_buf_.size()) {
+    this->tx_in_progress_ = false;
+    this->tx_frame_buf_.clear();
+    return;
   }
-  size_t max_chunk_data = max_att_len - 1;
 
-  size_t offset = 0;
-  uint8_t seg_idx = 0;
-  while (offset < frame.size()) {
-    size_t rem = frame.size() - offset;
-    bool is_last = (rem <= max_chunk_data);
-    size_t chunk_len = is_last ? rem : max_chunk_data;
+  size_t rem = this->tx_frame_buf_.size() - this->tx_frame_offset_;
+  bool is_last = (rem <= DIRECT_TX_MAX_CHUNK_DATA);
+  size_t chunk_len = is_last ? rem : DIRECT_TX_MAX_CHUNK_DATA;
 
-    uint8_t pkt[248];
-    pkt[0] = is_last ? SEGMENT_FINAL : seg_idx++;
-    std::memcpy(&pkt[1], frame.data() + offset, chunk_len);
-    esp_ble_gattc_write_char(this->parent()->get_gattc_if(),
-                             this->parent()->get_conn_id(), HANDLE_DIRECT_TX,
-                             chunk_len + 1, pkt, ESP_GATT_WRITE_TYPE_RSP,
-                             ESP_GATT_AUTH_REQ_NONE);
-    offset += chunk_len;
+  uint8_t pkt[1 + DIRECT_TX_MAX_CHUNK_DATA];
+  pkt[0] = is_last ? SEGMENT_FINAL : this->tx_seg_idx_++;
+  std::memcpy(&pkt[1], this->tx_frame_buf_.data() + this->tx_frame_offset_,
+              chunk_len);
+  this->tx_frame_offset_ += chunk_len;
+
+  const uint32_t now = millis();
+  this->last_req_ms_ = now;
+  this->last_action_ms_ = now;
+
+  esp_err_t err = esp_ble_gattc_write_char(
+      this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
+      HANDLE_DIRECT_TX, chunk_len + 1, pkt, ESP_GATT_WRITE_TYPE_RSP,
+      ESP_GATT_AUTH_REQ_NONE);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "DirectChannel write_char failed: %d", err);
+    this->tx_in_progress_ = false;
+    this->tx_frame_buf_.clear();
   }
 }
 
@@ -328,7 +339,12 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->active_group_idx_ = -1;
         this->in_flight_type_ = IN_FLIGHT_NONE;
         this->get_list_stage_ = 0;
+        this->get_list_use_v200_ = true;
         this->negotiated_mtu_ = 23;
+        this->tx_frame_buf_.clear();
+        this->tx_frame_offset_ = 0;
+        this->tx_seg_idx_ = 0;
+        this->tx_in_progress_ = false;
         this->rx_reassembly_buf_.clear();
         this->expected_rx_seg_ = 0;
         this->discovered_datapoints_.clear();
@@ -336,6 +352,7 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         for (auto &grp : this->poll_groups_) {
           for (auto &dp : grp.items) {
             dp.unsupported = false;
+            dp.single_read_only = false;
           }
         }
         this->last_action_ms_ = millis();
@@ -360,10 +377,27 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
       this->state_ = STATE_DISCONNECTED;
       this->active_group_idx_ = -1;
       this->in_flight_type_ = IN_FLIGHT_NONE;
+      this->tx_frame_buf_.clear();
+      this->tx_frame_offset_ = 0;
+      this->tx_seg_idx_ = 0;
+      this->tx_in_progress_ = false;
       this->rx_reassembly_buf_.clear();
       this->expected_rx_seg_ = 0;
       this->write_queue_.clear();
       this->publish_status_("Disconnected");
+      break;
+
+    case ESP_GATTC_WRITE_CHAR_EVT:
+      if (param->write.handle == HANDLE_DIRECT_TX) {
+        if (param->write.status != ESP_GATT_OK) {
+          ESP_LOGW(TAG, "DirectChannel GATT write failed: status=0x%02X",
+                   param->write.status);
+          this->tx_in_progress_ = false;
+          this->tx_frame_buf_.clear();
+        } else if (this->tx_in_progress_) {
+          this->send_next_tx_fragment_();
+        }
+      }
       break;
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
@@ -551,6 +585,17 @@ void BdrBleComponent::loop() {
   }
 
   if (this->state_ == STATE_READY) {
+    // Wait for multi-fragment TX to finish before timing out or starting a new request
+    if (this->tx_in_progress_) {
+      if (now - this->last_action_ms_ >= REQUEST_TIMEOUT_MS) {
+        ESP_LOGW(TAG, "Multi-fragment TX stalled; resetting TX state");
+        this->tx_in_progress_ = false;
+        this->tx_frame_buf_.clear();
+      } else {
+        return;
+      }
+    }
+
     // Check if an active request timed out
     if (this->in_flight_type_ != IN_FLIGHT_NONE &&
         (now - this->last_req_ms_ >= REQUEST_TIMEOUT_MS)) {
@@ -588,7 +633,8 @@ void BdrBleComponent::loop() {
           this->get_list_stage_ < 2) {
         this->get_list_stage_++;
         if (this->get_list_stage_ == 1) {
-          ESP_LOGI(TAG, "GetListRequest v2.01 timed out; trying v2.00 header");
+          ESP_LOGI(TAG, "GetListRequest v2.00 timed out; trying v2.01 header");
+          this->get_list_use_v200_ = false;
           this->active_item_idx_ = 0;
         } else {
           ESP_LOGI(TAG,
@@ -664,11 +710,25 @@ void BdrBleComponent::loop() {
         this->active_item_idx_++;
       }
       if (this->active_item_idx_ < grp.items.size()) {
+        if (this->get_list_stage_ > 2 ||
+            grp.items[this->active_item_idx_].single_read_only) {
+          const auto &dp = grp.items[this->active_item_idx_++];
+          this->send_read_param_(dp.node_id, dp.index, dp.sub_index);
+          this->in_flight_type_ = IN_FLIGHT_READ;
+          this->in_flight_node_ = dp.node_id;
+          this->in_flight_index_ = dp.index;
+          this->in_flight_sub_ = dp.sub_index;
+          this->last_req_ms_ = now;
+          this->last_action_ms_ = now;
+          return;
+        }
+
         std::vector<size_t> batch_indices;
         size_t scan_idx = this->active_item_idx_;
-        size_t max_batch = (this->get_list_stage_ <= 2) ? 16 : 1;
-        while (scan_idx < grp.items.size() &&
-               batch_indices.size() < max_batch) {
+        while (scan_idx < grp.items.size() && batch_indices.size() < 16) {
+          if (grp.items[scan_idx].single_read_only) {
+            break;
+          }
           if (!grp.items[scan_idx].unsupported) {
             batch_indices.push_back(scan_idx);
           }
@@ -676,9 +736,9 @@ void BdrBleComponent::loop() {
         }
         this->active_item_idx_ = scan_idx;
 
-        if (this->get_list_stage_ <= 2 && batch_indices.size() > 1) {
-          bool use_v200 = (this->get_list_stage_ == 1);
-          this->send_get_list_batch_(grp, batch_indices, use_v200);
+        if (batch_indices.size() > 1) {
+          this->send_get_list_batch_(grp, batch_indices,
+                                     this->get_list_use_v200_);
           this->in_flight_type_ = IN_FLIGHT_GET_LIST;
           this->last_req_ms_ = now;
           this->last_action_ms_ = now;

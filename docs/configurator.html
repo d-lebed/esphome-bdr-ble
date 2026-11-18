@@ -780,6 +780,8 @@
         if (typeof state.optComments === "boolean") document.getElementById("opt-include-comments").checked = state.optComments;
         if (state.optAuthLevel) document.getElementById("opt-auth-level").value = state.optAuthLevel;
 
+        parseSnapshotText(document.getElementById("snapshot-input").value);
+
         selected.clear();
         if (Array.isArray(state.selected)) {
           const byKey = new Map(DATAPOINTS.map(d => [d.key, d]));
@@ -793,7 +795,6 @@
         if (state.viewMode) {
           setViewMode(state.viewMode, true);
         }
-        parseSnapshotText(document.getElementById("snapshot-input").value);
         suppressSave = false;
         return true;
       } catch (e) {
@@ -829,36 +830,92 @@
       const raw = (rawText || "").trim();
       const badge = document.getElementById("snapshot-badge");
       const clearBtn = document.getElementById("snapshot-clear-btn");
-      for (const dp of DATAPOINTS) {
-        dp.lvl = dp.baseLvl;
+
+      // Remove any previously synthesized array sub-index clones
+      for (let i = DATAPOINTS.length - 1; i >= 0; i--) {
+        if (DATAPOINTS[i].isArrayClone) {
+          DATAPOINTS.splice(i, 1);
+        } else {
+          DATAPOINTS[i].lvl = DATAPOINTS[i].baseLvl;
+        }
       }
+
       if (!raw) {
         activeSnapshotKeys = null;
         badge.style.display = "none";
         clearBtn.style.display = "none";
         return;
       }
+
+      // Strip "from 0x502B:01..15" header text so 0x502B:01 is not mistaken for a datapoint
+      const cleanedRaw = raw.replace(/0x502B:[0-9a-fA-F]{1,2}\.\.[0-9a-fA-F]{1,2}/gi, "");
       const re = /(?:0x)?([0-9a-fA-F]{4}):(?:0x)?([0-9a-fA-F]{1,2})(?:@([1-5]))?/g;
       const keys = new Set();
       const snapLevels = new Map();
       let m;
-      while ((m = re.exec(raw)) !== null) {
+      while ((m = re.exec(cleanedRaw)) !== null) {
         const hi = "0x" + m[1].toUpperCase().padStart(4, "0");
         const sub = "0x" + m[2].toUpperCase().padStart(2, "0");
+        if (hi === "0x502B") continue;
         const fullKey = hi + ":" + sub;
         keys.add(fullKey);
         if (m[3]) {
-          snapLevels.set(hi, Number(m[3]));
+          snapLevels.set(fullKey, Number(m[3]));
+          if (!snapLevels.has(hi)) snapLevels.set(hi, Number(m[3]));
         }
       }
+
+      const byKey = new Map(DATAPOINTS.map(d => [d.key, d]));
+      const byHexIdx = new Map();
       for (const dp of DATAPOINTS) {
-        if (snapLevels.has(dp.hexIdx)) {
+        if (!byHexIdx.has(dp.hexIdx)) byHexIdx.set(dp.hexIdx, dp);
+      }
+
+      // Dynamically synthesize array element rows (SubIndex >= 2) if base index exists in catalog
+      for (const fullKey of keys) {
+        if (!byKey.has(fullKey)) {
+          const [hi, subHex] = fullKey.split(":");
+          const subNum = parseInt(subHex, 16);
+          const baseDp = byHexIdx.get(hi);
+          if (baseDp && subNum >= 2) {
+            const suffix = " [" + subNum + "]";
+            const clone = {
+              ...baseDp,
+              id: DATAPOINTS.length,
+              sub: subNum,
+              hexSub: subHex,
+              key: fullKey,
+              isArrayClone: true,
+              explicitSubIndex: subNum,
+              cleanLabel: (baseDp.cleanLabel || baseDp.cleanDesc) + suffix,
+              baseTitle: (baseDp.baseTitle || baseDp.cleanLabel || baseDp.cleanDesc) + suffix,
+              lvl: snapLevels.get(fullKey) || snapLevels.get(hi) || baseDp.baseLvl,
+              searchBlob: baseDp.searchBlob + " " + fullKey.toLowerCase()
+            };
+            DATAPOINTS.push(clone);
+            byKey.set(fullKey, clone);
+          }
+        }
+      }
+
+      for (const dp of DATAPOINTS) {
+        if (snapLevels.has(dp.key)) {
+          dp.lvl = snapLevels.get(dp.key);
+        } else if (snapLevels.has(dp.hexIdx)) {
           dp.lvl = snapLevels.get(dp.hexIdx);
         }
       }
+
       if (keys.size > 0) {
         activeSnapshotKeys = keys;
-        badge.textContent = "Snapshot active: " + keys.size + " boiler datapoints";
+        let matchedCount = 0;
+        for (const k of keys) {
+          if (byKey.has(k)) matchedCount++;
+        }
+        const structHidden = keys.size - matchedCount;
+        badge.textContent = structHidden > 0
+          ? ("Snapshot active: " + keys.size + " boiler items (" + matchedCount + " in table, " + structHidden + " schedule/table Structs hidden)")
+          : ("Snapshot active: " + keys.size + " boiler datapoints");
         badge.style.display = "inline";
         clearBtn.style.display = "inline-block";
       } else {
@@ -1352,9 +1409,28 @@
         lines.push("");
       }
 
+      const intervalOrder = ["5s", "10s", "30s", "60s", "300s"];
+
+      function appendItemLines(dp) {
+        const paramKey = dp.code || dp.name;
+        if (includeComments) {
+          const unitNote = dp.unit ? (", " + dp.unit) : "";
+          const lvlNote = dp.lvl ? (", L" + dp.lvl) : "";
+          const titleNote = dp.cleanLabel || dp.cleanDesc;
+          lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + unitNote + lvlNote + ") — " + titleNote);
+        }
+        lines.push("      - parameter: " + paramKey);
+        if (dp.explicitSubIndex) {
+          lines.push("        sub_index: " + dp.explicitSubIndex);
+        }
+        if (includeNames) {
+          const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
+          lines.push('        name: "' + safeName + '"');
+        }
+      }
+
       if (numericGroups.size > 0) {
         lines.push("sensor:");
-        const intervalOrder = ["5s", "10s", "30s", "60s", "300s"];
         const sortedIntervals = [...numericGroups.keys()].sort(
           (a, b) => intervalOrder.indexOf(a) - intervalOrder.indexOf(b)
         );
@@ -1363,28 +1439,13 @@
           lines.push("  - platform: bdr_ble");
           lines.push("    update_interval: " + interval);
           lines.push("    sensors:");
-          for (const entry of items) {
-            const dp = entry.dp;
-            const paramKey = dp.code || dp.name;
-            if (includeComments) {
-              const unitNote = dp.unit ? (", " + dp.unit) : "";
-              const lvlNote = dp.lvl ? (", L" + dp.lvl) : "";
-              const titleNote = dp.cleanLabel || dp.cleanDesc;
-              lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + unitNote + lvlNote + ") — " + titleNote);
-            }
-            lines.push("      - parameter: " + paramKey);
-            if (includeNames) {
-              const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
-              lines.push('        name: "' + safeName + '"');
-            }
-          }
+          for (const entry of items) appendItemLines(entry.dp);
           lines.push("");
         }
       }
 
       if (binaryGroups.size > 0) {
         lines.push("binary_sensor:");
-        const intervalOrder = ["5s", "10s", "30s", "60s", "300s"];
         const sortedIntervals = [...binaryGroups.keys()].sort(
           (a, b) => intervalOrder.indexOf(a) - intervalOrder.indexOf(b)
         );
@@ -1393,27 +1454,13 @@
           lines.push("  - platform: bdr_ble");
           lines.push("    update_interval: " + interval);
           lines.push("    binary_sensors:");
-          for (const entry of items) {
-            const dp = entry.dp;
-            const paramKey = dp.code || dp.name;
-            if (includeComments) {
-              const lvlNote = dp.lvl ? (", L" + dp.lvl) : "";
-              const titleNote = dp.cleanLabel || dp.cleanDesc;
-              lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + lvlNote + ") — " + titleNote);
-            }
-            lines.push("      - parameter: " + paramKey);
-            if (includeNames) {
-              const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
-              lines.push('        name: "' + safeName + '"');
-            }
-          }
+          for (const entry of items) appendItemLines(entry.dp);
           lines.push("");
         }
       }
 
       if (numberGroups.size > 0) {
         lines.push("number:");
-        const intervalOrder = ["5s", "10s", "30s", "60s", "300s"];
         const sortedIntervals = [...numberGroups.keys()].sort(
           (a, b) => intervalOrder.indexOf(a) - intervalOrder.indexOf(b)
         );
@@ -1422,28 +1469,13 @@
           lines.push("  - platform: bdr_ble");
           lines.push("    update_interval: " + interval);
           lines.push("    numbers:");
-          for (const entry of items) {
-            const dp = entry.dp;
-            const paramKey = dp.code || dp.name;
-            if (includeComments) {
-              const unitNote = dp.unit ? (", " + dp.unit) : "";
-              const lvlNote = dp.lvl ? (", L" + dp.lvl) : "";
-              const titleNote = dp.cleanLabel || dp.cleanDesc;
-              lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + unitNote + lvlNote + ") — " + titleNote);
-            }
-            lines.push("      - parameter: " + paramKey);
-            if (includeNames) {
-              const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
-              lines.push('        name: "' + safeName + '"');
-            }
-          }
+          for (const entry of items) appendItemLines(entry.dp);
           lines.push("");
         }
       }
 
       if (selectGroups.size > 0) {
         lines.push("select:");
-        const intervalOrder = ["5s", "10s", "30s", "60s", "300s"];
         const sortedIntervals = [...selectGroups.keys()].sort(
           (a, b) => intervalOrder.indexOf(a) - intervalOrder.indexOf(b)
         );
@@ -1452,20 +1484,7 @@
           lines.push("  - platform: bdr_ble");
           lines.push("    update_interval: " + interval);
           lines.push("    selects:");
-          for (const entry of items) {
-            const dp = entry.dp;
-            const paramKey = dp.code || dp.name;
-            if (includeComments) {
-              const lvlNote = dp.lvl ? (", L" + dp.lvl) : "";
-              const titleNote = dp.cleanLabel || dp.cleanDesc;
-              lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + lvlNote + ") — " + titleNote);
-            }
-            lines.push("      - parameter: " + paramKey);
-            if (includeNames) {
-              const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
-              lines.push('        name: "' + safeName + '"');
-            }
-          }
+          for (const entry of items) appendItemLines(entry.dp);
           lines.push("");
         }
       }
@@ -1479,20 +1498,7 @@
           lines.push("  - platform: bdr_ble");
           lines.push("    update_interval: " + interval);
           lines.push("    sensors:");
-          for (const entry of items) {
-            const dp = entry.dp;
-            const paramKey = dp.code || dp.name;
-            if (includeComments) {
-              const lvlNote = dp.lvl ? (", L" + dp.lvl) : "";
-              const titleNote = dp.cleanLabel || dp.cleanDesc;
-              lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + lvlNote + ") — " + titleNote);
-            }
-            lines.push("      - parameter: " + paramKey);
-            if (includeNames) {
-              const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');
-              lines.push('        name: "' + safeName + '"');
-            }
-          }
+          for (const entry of items) appendItemLines(entry.dp);
         }
       }
 

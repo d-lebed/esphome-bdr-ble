@@ -516,9 +516,20 @@ void BdrBleComponent::handle_snapshot_descriptor_(uint8_t sub_index,
     if (off + 15 > data_len) {
       break;
     }
+    uint8_t dp_len = data[off + 1];
     uint16_t dp_idx = static_cast<uint16_t>(data[off + 2]) |
                       (static_cast<uint16_t>(data[off + 3]) << 8);
     uint8_t dp_sub = data[off + 12];
+    if (dp_len > 0) {
+      for (auto &grp : this->poll_groups_) {
+        for (auto &dp : grp.items) {
+          if (dp.node_id == this->default_node_id_ && dp.index == dp_idx &&
+              dp.sub_index == dp_sub && dp.max_len == 0) {
+            dp.max_len = dp_len;
+          }
+        }
+      }
+    }
 #ifdef USE_NUMBER
     uint32_t raw_min_u = static_cast<uint32_t>(data[off + 4]) |
                          (static_cast<uint32_t>(data[off + 5]) << 8) |

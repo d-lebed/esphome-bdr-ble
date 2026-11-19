@@ -51,6 +51,7 @@ struct DatapointRegistration {
   uint8_t sub_index{0};
   BdrDataType data_type{BDR_TYPE_U16};
   float scale{1.0f};
+  uint8_t max_len{0};
   bool unsupported{false};
   bool single_read_only{false};
 #ifdef USE_SENSOR

@@ -144,6 +144,10 @@ void BdrBleComponent::register_text(text::Text *txt, uint16_t index,
                                     uint8_t node_id) {
   auto &dp = this->get_or_create_datapoint_(
       interval_ms, node_id, index, sub_index, BDR_TYPE_VISIBLE_STRING, 1.0f);
+  if (txt != nullptr && txt->traits.get_max_length() > 0 &&
+      txt->traits.get_max_length() <= 255) {
+    dp.max_len = static_cast<uint8_t>(txt->traits.get_max_length());
+  }
   dp.texts.push_back(txt);
 }
 #endif

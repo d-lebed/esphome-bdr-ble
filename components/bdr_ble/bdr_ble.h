@@ -162,6 +162,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
     IN_FLIGHT_READ,
     IN_FLIGHT_WRITE,
     IN_FLIGHT_GET_LIST,
+    IN_FLIGHT_KEEPALIVE,
   };
 
   DatapointRegistration &get_or_create_datapoint_(uint32_t interval_ms, uint8_t node_id,

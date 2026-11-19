@@ -237,16 +237,21 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
+    bool was_keepalive = false;
     if ((this->in_flight_type_ == IN_FLIGHT_READ ||
-         this->in_flight_type_ == IN_FLIGHT_SNAPSHOT) &&
+         this->in_flight_type_ == IN_FLIGHT_SNAPSHOT ||
+         this->in_flight_type_ == IN_FLIGHT_KEEPALIVE) &&
         this->in_flight_node_ == node_id &&
         this->in_flight_index_ == index &&
         this->in_flight_sub_ == sub_index) {
+      was_keepalive = (this->in_flight_type_ == IN_FLIGHT_KEEPALIVE);
       this->in_flight_type_ = IN_FLIGHT_NONE;
       this->consecutive_timeouts_ = 0;
     }
-    this->handle_single_read_ack_(node_id, index, sub_index, payload + 10,
-                                  len - 10);
+    if (!was_keepalive) {
+      this->handle_single_read_ack_(node_id, index, sub_index, payload + 10,
+                                    len - 10);
+    }
     return;
   }
 
@@ -256,13 +261,19 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
+    bool was_keepalive = false;
     if ((this->in_flight_type_ == IN_FLIGHT_READ ||
-         this->in_flight_type_ == IN_FLIGHT_SNAPSHOT) &&
+         this->in_flight_type_ == IN_FLIGHT_SNAPSHOT ||
+         this->in_flight_type_ == IN_FLIGHT_KEEPALIVE) &&
         this->in_flight_node_ == node_id &&
         this->in_flight_index_ == index &&
         this->in_flight_sub_ == sub_index) {
+      was_keepalive = (this->in_flight_type_ == IN_FLIGHT_KEEPALIVE);
       this->in_flight_type_ = IN_FLIGHT_NONE;
       this->consecutive_timeouts_ = 0;
+    }
+    if (was_keepalive) {
+      return;
     }
     uint32_t abort_code = 0;
     if (len >= 14) {

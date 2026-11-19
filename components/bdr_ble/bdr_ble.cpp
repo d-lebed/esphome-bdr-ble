@@ -906,12 +906,8 @@ void BdrBleComponent::loop() {
       return;
     }
 
-    if (this->poll_groups_.empty()) {
-      return;
-    }
-
     // If no group is currently bursting, select the most overdue group
-    if (this->active_group_idx_ < 0) {
+    if (this->active_group_idx_ < 0 && !this->poll_groups_.empty()) {
       int best_group = -1;
       uint32_t max_overdue = 0;
       for (size_t g = 0; g < this->poll_groups_.size(); g++) {
@@ -987,6 +983,7 @@ void BdrBleComponent::loop() {
           this->in_flight_type_ = IN_FLIGHT_GET_LIST;
           this->last_req_ms_ = now;
           this->last_action_ms_ = now;
+          return;
         } else if (!batch_indices.empty()) {
           const auto &dp = grp.items[batch_indices[0]];
           this->send_read_param_(dp.node_id, dp.index, dp.sub_index);
@@ -996,10 +993,24 @@ void BdrBleComponent::loop() {
           this->in_flight_sub_ = dp.sub_index;
           this->last_req_ms_ = now;
           this->last_action_ms_ = now;
+          return;
         }
       } else {
         this->active_group_idx_ = -1;
       }
+    }
+
+    // Keep the boiler's 10-second RUB v2.01 CAN session timer alive when idle
+    if (this->active_group_idx_ < 0 && this->in_flight_type_ == IN_FLIGHT_NONE &&
+        (now - this->last_action_ms_ >= KEEPALIVE_INTERVAL_MS)) {
+      ESP_LOGV(TAG, "Sending RUB session keep-alive (0x1000:00)");
+      this->send_read_param_(this->default_node_id_, INDEX_CAN_DEVICE_TYPE, 0x00);
+      this->in_flight_type_ = IN_FLIGHT_KEEPALIVE;
+      this->in_flight_node_ = this->default_node_id_;
+      this->in_flight_index_ = INDEX_CAN_DEVICE_TYPE;
+      this->in_flight_sub_ = 0x00;
+      this->last_req_ms_ = now;
+      this->last_action_ms_ = now;
     }
   }
 }

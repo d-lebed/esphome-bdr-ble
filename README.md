@@ -38,8 +38,8 @@ Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Blu
   - Automatically recovers from stale bonds (when a 4th paired device evicts the oldest of the gateway's 3 slots) and respects the gateway's 60-second lockout window (`90s → 180s → 300s → 600s` backoff).
   - Configurable hardware access level (`auth_level: 1..4`: `1` = End User Safe, `2` = Installer Standard, `3` = Service, `4` = Lab/OEM).
 - **Read & Write Support:**
-  - `sensor`, `binary_sensor` & `text_sensor`: Read temperatures, water pressure, boolean status flags (`HM012`, `HM013`, `AM015`), status enums, and kWh energy consumption/delivery counters.
-  - `number` & `select`: Edit numeric setpoints (e.g., DHW comfort/eco temperature, flow setpoints) and enum operating modes (`WriteConfirmedRequest 0x04`) with automatic hardware range discovery from `0x502B`.
+  - `sensor`, `binary_sensor` & `text_sensor`: Read temperatures, water pressure, boolean status flags (`HM012`, `HM013`, `AM015`), status enums, strings, and kWh energy consumption/delivery counters.
+  - `number`, `select` & `text`: Edit numeric setpoints (e.g., DHW comfort/eco temperature, flow setpoints), enum operating modes, and string labels (zone names `parZoneFriendlyName`, user activity names `parZoneFriendlyNameUserActivity`, installer info `AP089`/`AP090`) via `WriteConfirmedRequest 0x04` with automatic hardware range discovery from `0x502B`.
 - **Zero Firmware Bloat & High-Speed Batching:** Resolves menu codes (`AM027`, `DM001`, `AC005`, `DP070`) at compile time, batches requests via `GetListRequest (0x08)`, and automatically skips unsupported datapoints (`Auto-Skip`).
 
 ---
@@ -61,7 +61,7 @@ See [`example.yaml`](./example.yaml) and the **[Full Documentation](https://d-le
 
 ```yaml
 external_components:
-  - source: github://d-lebed/esphome-bdr-ble@v1.3.1
+  - source: github://d-lebed/esphome-bdr-ble@v1.4.0
     components: [bdr_ble]
 
 esp32:

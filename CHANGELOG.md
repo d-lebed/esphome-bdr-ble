@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-11-19
+
+### Added
+- **Writable String Platform (`text`):**
+  - Added `components/bdr_ble/text/` platform (`esphome::text::Text`) for reading and editing writable `VisibleString` parameters in Home Assistant — including zone friendly names (`parZoneFriendlyName` / `0x340F`), short zone names (`parZoneFriendlyNameShort` / `0x3410`), user activity names (`parZoneFriendlyNameUserActivity` / `0x340D:01..06`), cooling setpoint names (`parZoneFriendlyNameCoolingSetpoint` / `0x3411:01..06`), appliance name (`parApApplianceName` / `0x3047`), and installer name/phone (`AP089` / `AP090`).
+  - Added exact `len` character limits from `BDR_OBD.xml` to all 51 `VisibleString` entries in `obd_catalog.json` and automatically formats fixed-length null-padded (`0x00`) SDO `WriteConfirmedRequest` frames with automatic readback on `WRITE_POS_ACK`.
+  - Updated `docs/configurator.html` to expose writable `VisibleString` parameters in the **Writable** tab with `text (rw)` / `text_sensor (ro)` selection, character limit badges (`max Nch`), and `text:` YAML generation.
+
+### Fixed
+- **ESPHome 2026.11 `EntityBase::get_name()` Deprecation Warning:**
+  - Replaced deprecated `EntityBase::get_name()` calls in `mark_datapoint_unsupported_()` with a backward-compatible `get_log_name()` SFINAE helper, eliminating `-Wdeprecated-declarations` warnings on ESPHome `2026.11.0+`.
+
+---
+
 ## [1.3.1] - 2026-11-19
 
 ### Added
@@ -118,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.1.0...v1.2.0

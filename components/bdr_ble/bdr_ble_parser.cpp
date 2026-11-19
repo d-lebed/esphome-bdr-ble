@@ -419,17 +419,21 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
                      (static_cast<uint32_t>(payload[offset + 2]) << 16) |
                      (static_cast<uint32_t>(payload[offset + 3]) << 24);
       }
-      if (abort_code == SDO_ABORT_OBJECT_NOT_EXIST ||
-          abort_code == SDO_ABORT_SUBINDEX_NOT_EXIST ||
-          abort_code == SDO_ABORT_UNSUPPORTED_ACCESS ||
-          abort_code == SDO_ABORT_WRITE_ONLY) {
-        this->mark_datapoint_unsupported_(node_id, index, sub_index, status,
-                                          abort_code);
-      } else {
-        ESP_LOGW(TAG,
-                 "Transient GetList abort on 0x%04X:%02X: status=0x%02X, abort=0x%08X (%s)",
-                 index, sub_index, status, static_cast<unsigned>(abort_code),
-                 sdo_abort_code_str(abort_code));
+      // Some scalars are not served via bulk GetList and return status != 0x01.
+      // Fall back to single ReadRequest (0x00) once to verify whether individual SDO read works.
+      for (auto &grp : this->poll_groups_) {
+        for (auto &dp : grp.items) {
+          if (dp.node_id == node_id && dp.index == index &&
+              dp.sub_index == sub_index && !dp.single_read_only) {
+            dp.single_read_only = true;
+            ESP_LOGI(TAG,
+                     "Datapoint 0x%04X:%02X returned status=0x%02X (abort=0x%08X: %s) in GetList; "
+                     "switching to single-read polling",
+                     index, sub_index, status,
+                     static_cast<unsigned>(abort_code),
+                     sdo_abort_code_str(abort_code));
+          }
+        }
       }
     }
     offset += data_len;

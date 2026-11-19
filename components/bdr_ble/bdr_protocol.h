@@ -61,9 +61,9 @@ inline constexpr uint16_t INDEX_CAN_DEVICE_TYPE = 0x1000;
 inline constexpr uint16_t INDEX_AP_MENU_DESCRIPTOR = 0x502B;
 inline constexpr uint8_t SNAPSHOT_MAX_SUB_INDEX = 15;
 
-// Timeouts aligned with boiler's 1000 ms CAN SDO timeout and 10000 ms RUB session timeout
+// Timeouts aligned with boiler's CAN SDO / GetList round-trip and 10000 ms RUB session timeout
 inline constexpr uint32_t HANDSHAKE_TIMEOUT_MS = 3000;
-inline constexpr uint32_t REQUEST_TIMEOUT_MS = 1500;
+inline constexpr uint32_t REQUEST_TIMEOUT_MS = 4000;
 inline constexpr uint32_t KEEPALIVE_INTERVAL_MS = 5000;
 inline constexpr uint32_t AUTH_COOLDOWN_MS = 30000;
 inline constexpr uint32_t PAIRING_TIMEOUT_MS = 30000;
@@ -110,6 +110,11 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
 /// Encode a scaled float value into Little-Endian wire bytes according to BdrDataType.
 bool encode_numeric_datapoint(BdrDataType data_type, float scale, float value,
                               std::vector<uint8_t> &out_bytes);
+
+/// Decode a VisibleString payload into a validated printable UTF-8 string.
+/// Returns false if the payload contains invalid UTF-8 / control characters or a 4-byte error word.
+bool decode_visible_string(const uint8_t *data, size_t data_len,
+                           uint8_t expected_max_len, std::string &out_str);
 
 /// Return human-readable description for ESP-IDF BLE SMP authentication failure reason (0x4D + SMP code).
 const char *ble_auth_fail_reason_str(uint8_t reason);

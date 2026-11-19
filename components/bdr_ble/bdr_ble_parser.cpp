@@ -107,6 +107,8 @@ void BdrBleComponent::handle_direct_segment_(const uint8_t *data,
     this->rx_reassembly_buf_.assign(data + 1, data + len);
     this->expected_rx_seg_ = 1;
     this->last_rx_seg_ms_ = now;
+    this->last_req_ms_ = now;
+    this->last_action_ms_ = now;
     return;
   }
   if (seg < SEGMENT_FINAL) {
@@ -116,6 +118,8 @@ void BdrBleComponent::handle_direct_segment_(const uint8_t *data,
                                       data + len);
       this->expected_rx_seg_++;
       this->last_rx_seg_ms_ = now;
+      this->last_req_ms_ = now;
+      this->last_action_ms_ = now;
     } else {
       ESP_LOGW(TAG, "Out-of-order RX segment 0x%02X (expected 0x%02X); resetting",
                seg, this->expected_rx_seg_);
@@ -415,21 +419,17 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
                      (static_cast<uint32_t>(payload[offset + 2]) << 16) |
                      (static_cast<uint32_t>(payload[offset + 3]) << 24);
       }
-      // Some scalars are not served via bulk GetList and return status != 0x01.
-      // Fall back to single ReadRequest (0x00) once to verify whether individual SDO read works.
-      for (auto &grp : this->poll_groups_) {
-        for (auto &dp : grp.items) {
-          if (dp.node_id == node_id && dp.index == index &&
-              dp.sub_index == sub_index && !dp.single_read_only) {
-            dp.single_read_only = true;
-            ESP_LOGI(TAG,
-                     "Datapoint 0x%04X:%02X returned status=0x%02X (abort=0x%08X: %s) in GetList; "
-                     "switching to single-read polling",
-                     index, sub_index, status,
-                     static_cast<unsigned>(abort_code),
-                     sdo_abort_code_str(abort_code));
-          }
-        }
+      if (abort_code == SDO_ABORT_OBJECT_NOT_EXIST ||
+          abort_code == SDO_ABORT_SUBINDEX_NOT_EXIST ||
+          abort_code == SDO_ABORT_UNSUPPORTED_ACCESS ||
+          abort_code == SDO_ABORT_WRITE_ONLY) {
+        this->mark_datapoint_unsupported_(node_id, index, sub_index, status,
+                                          abort_code);
+      } else {
+        ESP_LOGW(TAG,
+                 "Transient GetList abort on 0x%04X:%02X: status=0x%02X, abort=0x%08X (%s)",
+                 index, sub_index, status, static_cast<unsigned>(abort_code),
+                 sdo_abort_code_str(abort_code));
       }
     }
     offset += data_len;
@@ -695,13 +695,15 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
 
 #ifdef USE_TEXT
       if (!dp.texts.empty() && dp.data_type == BDR_TYPE_VISIBLE_STRING) {
-        size_t slen = 0;
-        while (slen < data_len && data[slen] != 0) {
-          slen++;
-        }
-        std::string str_val(reinterpret_cast<const char *>(data), slen);
-        for (auto *txt : dp.texts) {
-          txt->publish_state(str_val);
+        std::string str_val;
+        if (decode_visible_string(data, data_len, dp.max_len, str_val)) {
+          for (auto *txt : dp.texts) {
+            txt->publish_state(str_val);
+          }
+        } else {
+          ESP_LOGW(TAG,
+                   "Ignoring invalid VisibleString payload on 0x%04X:%02X (len=%zu, expected=%u)",
+                   index, sub_index, data_len, dp.max_len);
         }
       }
 #endif
@@ -709,20 +711,24 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
 #ifdef USE_TEXT_SENSOR
       if (!dp.text_sensors.empty()) {
         std::string text_val;
+        bool valid_text = true;
         if (dp.data_type == BDR_TYPE_ENUM) {
           if (enum_label != nullptr) {
             text_val = *enum_label;
-          } else {
+          } else if (valid_numeric) {
             char fbuf[24];
             snprintf(fbuf, sizeof(fbuf), "%d", static_cast<int>(raw_enum_val));
             text_val = fbuf;
+          } else {
+            valid_text = false;
           }
         } else if (dp.data_type == BDR_TYPE_VISIBLE_STRING) {
-          size_t slen = 0;
-          while (slen < data_len && data[slen] != 0) {
-            slen++;
+          if (!decode_visible_string(data, data_len, dp.max_len, text_val)) {
+            ESP_LOGW(TAG,
+                     "Ignoring invalid VisibleString payload on 0x%04X:%02X (len=%zu, expected=%u)",
+                     index, sub_index, data_len, dp.max_len);
+            valid_text = false;
           }
-          text_val.assign(reinterpret_cast<const char *>(data), slen);
         } else if (dp.data_type == BDR_TYPE_OCTET_STRING) {
           char hbuf[96];
           int hpos = 0;
@@ -736,9 +742,13 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
           char tbuf[16];
           snprintf(tbuf, sizeof(tbuf), "%02u:%02u", data[0], data[1]);
           text_val = tbuf;
+        } else {
+          valid_text = false;
         }
-        for (auto *ts : dp.text_sensors) {
-          ts->publish_state(text_val);
+        if (valid_text) {
+          for (auto *ts : dp.text_sensors) {
+            ts->publish_state(text_val);
+          }
         }
       }
 #endif

@@ -62,14 +62,14 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
 
   switch (data_type) {
     case BDR_TYPE_U8:
-      if (data_len >= 1 && data[0] != 0xFF) {
+      if (data_len == 1 && data[0] != 0xFF) {
         out_numeric = static_cast<float>(data[0]) * scale;
         return true;
       }
       return false;
 
     case BDR_TYPE_I8:
-      if (data_len >= 1) {
+      if (data_len == 1) {
         int8_t v = static_cast<int8_t>(data[0]);
         if (v != -128) {
           out_numeric = static_cast<float>(v) * scale;
@@ -79,7 +79,7 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
       return false;
 
     case BDR_TYPE_U16:
-      if (data_len >= 2) {
+      if (data_len == 2) {
         uint16_t v = static_cast<uint16_t>(data[0]) |
                      (static_cast<uint16_t>(data[1]) << 8);
         if (v != 0xFFFF) {
@@ -90,7 +90,7 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
       return false;
 
     case BDR_TYPE_I16:
-      if (data_len >= 2) {
+      if (data_len == 2) {
         int16_t v = static_cast<int16_t>(
             static_cast<uint16_t>(data[0]) |
             (static_cast<uint16_t>(data[1]) << 8));
@@ -102,12 +102,12 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
       return false;
 
     case BDR_TYPE_U32:
-      if (data_len >= 4) {
+      if (data_len == 4) {
         uint32_t v = static_cast<uint32_t>(data[0]) |
                      (static_cast<uint32_t>(data[1]) << 8) |
                      (static_cast<uint32_t>(data[2]) << 16) |
                      (static_cast<uint32_t>(data[3]) << 24);
-        if (v != 0xFFFFFFFFUL) {
+        if (v < 0x30000000UL) {
           out_numeric = static_cast<float>(v) * scale;
           return true;
         }
@@ -122,13 +122,14 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
       return false;
 
     case BDR_TYPE_I32:
-      if (data_len >= 4) {
+      if (data_len == 4) {
         int32_t v = static_cast<int32_t>(
             static_cast<uint32_t>(data[0]) |
             (static_cast<uint32_t>(data[1]) << 8) |
             (static_cast<uint32_t>(data[2]) << 16) |
             (static_cast<uint32_t>(data[3]) << 24));
-        if (v != static_cast<int32_t>(0x80000000UL)) {
+        if (v != static_cast<int32_t>(0x80000000UL) &&
+            (v < 0x30000000L || v > 0x3FFFFFFFL)) {
           out_numeric = static_cast<float>(v) * scale;
           return true;
         }
@@ -136,12 +137,17 @@ bool decode_numeric_datapoint(BdrDataType data_type, float scale,
       return false;
 
     case BDR_TYPE_ENUM:
-      if (data_len >= 2) {
-        out_raw_enum = static_cast<int32_t>(
-            static_cast<uint16_t>(data[0]) |
-            (static_cast<uint16_t>(data[1]) << 8));
-      } else {
+      if (data_len == 2) {
+        uint16_t u = static_cast<uint16_t>(data[0]) |
+                     (static_cast<uint16_t>(data[1]) << 8);
+        if (u == 0xFFFF) {
+          return false;
+        }
+        out_raw_enum = static_cast<int32_t>(u);
+      } else if (data_len == 1) {
         out_raw_enum = data[0];
+      } else {
+        return false;
       }
       out_numeric = static_cast<float>(out_raw_enum);
       return true;
@@ -220,6 +226,54 @@ bool encode_numeric_datapoint(BdrDataType data_type, float scale, float value,
     default:
       return false;
   }
+}
+
+bool decode_visible_string(const uint8_t *data, size_t data_len,
+                           uint8_t expected_max_len, std::string &out_str) {
+  out_str.clear();
+  if (data == nullptr || data_len == 0) {
+    return false;
+  }
+  // Reject 4-byte error/status words masquerading as fixed-length VisibleString responses
+  if (expected_max_len > 0 && expected_max_len != 4 && data_len == 4) {
+    return false;
+  }
+
+  size_t slen = 0;
+  while (slen < data_len && data[slen] != 0) {
+    slen++;
+  }
+
+  // Validate that the string is valid printable UTF-8 (no control chars or raw binary bytes)
+  size_t i = 0;
+  while (i < slen) {
+    uint8_t c = data[i];
+    if (c >= 0x20 && c <= 0x7E) {
+      i += 1;
+    } else if ((c & 0xE0) == 0xC0 && c >= 0xC2) {
+      if (i + 1 >= slen || (data[i + 1] & 0xC0) != 0x80) {
+        return false;
+      }
+      i += 2;
+    } else if ((c & 0xF0) == 0xE0) {
+      if (i + 2 >= slen || (data[i + 1] & 0xC0) != 0x80 ||
+          (data[i + 2] & 0xC0) != 0x80) {
+        return false;
+      }
+      i += 3;
+    } else if ((c & 0xF8) == 0xF0 && c <= 0xF4) {
+      if (i + 3 >= slen || (data[i + 1] & 0xC0) != 0x80 ||
+          (data[i + 2] & 0xC0) != 0x80 || (data[i + 3] & 0xC0) != 0x80) {
+        return false;
+      }
+      i += 4;
+    } else {
+      return false;
+    }
+  }
+
+  out_str.assign(reinterpret_cast<const char *>(data), slen);
+  return true;
 }
 
 const char *ble_auth_fail_reason_str(uint8_t reason) {

@@ -841,8 +841,12 @@ void BdrBleComponent::loop() {
       }
     }
 
+    const bool channel_busy =
+        !this->rx_reassembly_buf_.empty() &&
+        (now - this->last_rx_seg_ms_ <= 1000);
+
     // Check if an active request timed out
-    if (this->in_flight_type_ != IN_FLIGHT_NONE &&
+    if (this->in_flight_type_ != IN_FLIGHT_NONE && !channel_busy &&
         (now - this->last_req_ms_ >= REQUEST_TIMEOUT_MS)) {
       InFlightType timed_out_type = this->in_flight_type_;
       this->in_flight_type_ = IN_FLIGHT_NONE;
@@ -892,7 +896,7 @@ void BdrBleComponent::loop() {
 
     // Priority 1: Execute any queued parameter writes immediately
     if (!this->write_queue_.empty() && this->in_flight_type_ == IN_FLIGHT_NONE &&
-        (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
+        !channel_busy && (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
       PendingWrite pw = this->write_queue_.front();
       this->write_queue_.pop_front();
       this->send_write_param_(pw.node_id, pw.index, pw.sub_index,
@@ -944,7 +948,7 @@ void BdrBleComponent::loop() {
 
     // Execute batch GetListRequest or sequential read for the active group
     if (this->active_group_idx_ >= 0 && this->in_flight_type_ == IN_FLIGHT_NONE &&
-        (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
+        !channel_busy && (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
       auto &grp = this->poll_groups_[this->active_group_idx_];
       while (this->active_item_idx_ < grp.items.size() &&
              grp.items[this->active_item_idx_].unsupported) {
@@ -1002,7 +1006,7 @@ void BdrBleComponent::loop() {
 
     // Keep the boiler's 10-second RUB v2.01 CAN session timer alive when idle
     if (this->active_group_idx_ < 0 && this->in_flight_type_ == IN_FLIGHT_NONE &&
-        (now - this->last_action_ms_ >= KEEPALIVE_INTERVAL_MS)) {
+        !channel_busy && (now - this->last_action_ms_ >= KEEPALIVE_INTERVAL_MS)) {
       ESP_LOGV(TAG, "Sending RUB session keep-alive (0x1000:00)");
       this->send_read_param_(this->default_node_id_, INDEX_CAN_DEVICE_TYPE, 0x00);
       this->in_flight_type_ = IN_FLIGHT_KEEPALIVE;

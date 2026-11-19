@@ -425,6 +425,18 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
   }
 }
 
+namespace {
+template <typename T>
+inline auto entity_log_name(const T *e, int)
+    -> decltype(LOG_STR_ARG(e->get_log_name())) {
+  return LOG_STR_ARG(e->get_log_name());
+}
+template <typename T>
+inline const char *entity_log_name(const T *e, long) {
+  return e->get_name().c_str();
+}
+}  // namespace
+
 void BdrBleComponent::mark_datapoint_unsupported_(uint8_t node_id,
                                                   uint16_t index,
                                                   uint8_t sub_index,
@@ -438,27 +450,32 @@ void BdrBleComponent::mark_datapoint_unsupported_(uint8_t node_id,
         const char *entity_name = "unregistered";
 #ifdef USE_SENSOR
         if (!dp.sensors.empty() && dp.sensors[0] != nullptr) {
-          entity_name = dp.sensors[0]->get_name().c_str();
+          entity_name = entity_log_name(dp.sensors[0], 0);
         }
 #endif
 #ifdef USE_BINARY_SENSOR
         if (!dp.binary_sensors.empty() && dp.binary_sensors[0] != nullptr) {
-          entity_name = dp.binary_sensors[0]->get_name().c_str();
+          entity_name = entity_log_name(dp.binary_sensors[0], 0);
         }
 #endif
 #ifdef USE_TEXT_SENSOR
         if (!dp.text_sensors.empty() && dp.text_sensors[0] != nullptr) {
-          entity_name = dp.text_sensors[0]->get_name().c_str();
+          entity_name = entity_log_name(dp.text_sensors[0], 0);
         }
 #endif
 #ifdef USE_NUMBER
         if (!dp.numbers.empty() && dp.numbers[0] != nullptr) {
-          entity_name = dp.numbers[0]->get_name().c_str();
+          entity_name = entity_log_name(dp.numbers[0], 0);
         }
 #endif
 #ifdef USE_SELECT
         if (!dp.selects.empty() && dp.selects[0] != nullptr) {
-          entity_name = dp.selects[0]->get_name().c_str();
+          entity_name = entity_log_name(dp.selects[0], 0);
+        }
+#endif
+#ifdef USE_TEXT
+        if (!dp.texts.empty() && dp.texts[0] != nullptr) {
+          entity_name = entity_log_name(dp.texts[0], 0);
         }
 #endif
         ESP_LOGW(TAG,
@@ -661,6 +678,19 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
       if (enum_label != nullptr) {
         for (auto *sel : dp.selects) {
           sel->publish_state(*enum_label);
+        }
+      }
+#endif
+
+#ifdef USE_TEXT
+      if (!dp.texts.empty() && dp.data_type == BDR_TYPE_VISIBLE_STRING) {
+        size_t slen = 0;
+        while (slen < data_len && data[slen] != 0) {
+          slen++;
+        }
+        std::string str_val(reinterpret_cast<const char *>(data), slen);
+        for (auto *txt : dp.texts) {
+          txt->publish_state(str_val);
         }
       }
 #endif

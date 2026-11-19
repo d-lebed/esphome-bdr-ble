@@ -22,6 +22,9 @@
 #ifdef USE_SELECT
 #include "esphome/components/select/select.h"
 #endif
+#ifdef USE_TEXT
+#include "esphome/components/text/text.h"
+#endif
 
 #include <esp_gattc_api.h>
 #include <esp_gap_ble_api.h>
@@ -64,6 +67,9 @@ struct DatapointRegistration {
 #endif
 #ifdef USE_SELECT
   std::vector<select::Select *> selects;
+#endif
+#ifdef USE_TEXT
+  std::vector<text::Text *> texts;
 #endif
 };
 
@@ -121,6 +127,11 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
 #ifdef USE_SELECT
   void register_select(select::Select *sel, uint16_t index, uint8_t sub_index,
                        uint32_t interval_ms, uint8_t node_id = 0xFF);
+#endif
+
+#ifdef USE_TEXT
+  void register_text(text::Text *txt, uint16_t index, uint8_t sub_index,
+                     uint32_t interval_ms, uint8_t node_id = 0xFF);
 #endif
 
   void queue_write_datapoint(uint8_t node_id, uint16_t index, uint8_t sub_index,

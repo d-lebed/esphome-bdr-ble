@@ -138,6 +138,16 @@ void BdrBleComponent::register_select(select::Select *sel, uint16_t index,
 }
 #endif
 
+#ifdef USE_TEXT
+void BdrBleComponent::register_text(text::Text *txt, uint16_t index,
+                                    uint8_t sub_index, uint32_t interval_ms,
+                                    uint8_t node_id) {
+  auto &dp = this->get_or_create_datapoint_(
+      interval_ms, node_id, index, sub_index, BDR_TYPE_VISIBLE_STRING, 1.0f);
+  dp.texts.push_back(txt);
+}
+#endif
+
 void BdrBleComponent::queue_write_datapoint(uint8_t node_id, uint16_t index,
                                             uint8_t sub_index,
                                             const std::vector<uint8_t> &data) {
@@ -452,7 +462,7 @@ void BdrBleComponent::send_read_param_(uint8_t node_id, uint16_t index,
 void BdrBleComponent::send_write_param_(uint8_t node_id, uint16_t index,
                                         uint8_t sub_index, const uint8_t *data,
                                         size_t data_len) {
-  if (data_len == 0 || data_len > 32) {
+  if (data_len == 0 || data_len > 255) {
     return;
   }
   std::vector<uint8_t> req(10 + data_len);

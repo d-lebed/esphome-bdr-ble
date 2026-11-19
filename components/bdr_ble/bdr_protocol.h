@@ -115,4 +115,7 @@ const char *ble_auth_fail_reason_str(uint8_t reason);
 /// Return true if BLE auth failure is a transient timeout/busy error where stored bond key is still valid.
 bool is_transient_ble_auth_failure(uint8_t reason);
 
+/// Return human-readable description for a 32-bit CANopen SDO abort code.
+const char *sdo_abort_code_str(uint32_t abort_code);
+
 }  // namespace esphome::bdr_ble

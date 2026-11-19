@@ -50,7 +50,7 @@ Vedi [`example.yaml`](./example.yaml) e la **[Documentazione completa](https://d
 
 ```yaml
 external_components:
-  - source: github://d-lebed/esphome-bdr-ble@v1.3.0
+  - source: github://d-lebed/esphome-bdr-ble@v1.3.1
     components: [bdr_ble]
 
 esp32:

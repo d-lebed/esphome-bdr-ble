@@ -184,7 +184,8 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void dispatch_datapoint_value_(uint8_t node_id, uint16_t index, uint8_t sub_index,
                                  const uint8_t *data, size_t data_len);
   void mark_datapoint_unsupported_(uint8_t node_id, uint16_t index,
-                                   uint8_t sub_index, uint8_t status_code);
+                                   uint8_t sub_index, uint8_t status_code,
+                                   uint32_t abort_code = 0);
   void handle_snapshot_descriptor_(uint8_t sub_index, const uint8_t *data,
                                    size_t data_len);
   void log_appliance_snapshot_();

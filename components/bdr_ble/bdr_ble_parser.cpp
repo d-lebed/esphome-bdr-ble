@@ -283,10 +283,11 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
                abort_code == SDO_ABORT_UNSUPPORTED_ACCESS ||
                abort_code == SDO_ABORT_WRITE_ONLY) {
       this->mark_datapoint_unsupported_(node_id, index, sub_index,
-                                        FUNC_READ_NEG_ACK);
+                                        FUNC_READ_NEG_ACK, abort_code);
     } else {
-      ESP_LOGW(TAG, "Transient SDO read abort on 0x%04X:%02X: 0x%08X", index,
-               sub_index, static_cast<unsigned>(abort_code));
+      ESP_LOGW(TAG, "Transient SDO read abort on 0x%04X:%02X: 0x%08X (%s)",
+               index, sub_index, static_cast<unsigned>(abort_code),
+               sdo_abort_code_str(abort_code));
     }
     return;
   }
@@ -331,8 +332,9 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     }
     this->consecutive_timeouts_ = 0;
     ESP_LOGW(TAG,
-             "Write NACK for 0x%04X:%02X (SDO abort=0x%08X); reverting state",
-             index, sub_index, static_cast<unsigned>(abort_code));
+             "Write NACK for 0x%04X:%02X (SDO abort=0x%08X: %s); reverting state",
+             index, sub_index, static_cast<unsigned>(abort_code),
+             sdo_abort_code_str(abort_code));
     this->send_read_param_(node_id, index, sub_index);
     this->in_flight_type_ = IN_FLIGHT_READ;
     this->in_flight_node_ = node_id;
@@ -395,17 +397,26 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
       this->dispatch_datapoint_value_(node_id, index, sub_index,
                                       payload + offset, data_len);
     } else {
-      // Some writable scalars are not served via bulk GetList and return status != 0x01.
-      // Fall back to single ReadRequest (0x00) for this datapoint instead of disabling it.
+      uint32_t abort_code = 0;
+      if (data_len >= 4) {
+        abort_code = static_cast<uint32_t>(payload[offset + 0]) |
+                     (static_cast<uint32_t>(payload[offset + 1]) << 8) |
+                     (static_cast<uint32_t>(payload[offset + 2]) << 16) |
+                     (static_cast<uint32_t>(payload[offset + 3]) << 24);
+      }
+      // Some scalars are not served via bulk GetList and return status != 0x01.
+      // Fall back to single ReadRequest (0x00) once to verify whether individual SDO read works.
       for (auto &grp : this->poll_groups_) {
         for (auto &dp : grp.items) {
           if (dp.node_id == node_id && dp.index == index &&
               dp.sub_index == sub_index && !dp.single_read_only) {
             dp.single_read_only = true;
             ESP_LOGI(TAG,
-                     "Datapoint 0x%04X:%02X returned status=0x%02X in GetList; "
+                     "Datapoint 0x%04X:%02X returned status=0x%02X (abort=0x%08X: %s) in GetList; "
                      "switching to single-read polling",
-                     index, sub_index, status);
+                     index, sub_index, status,
+                     static_cast<unsigned>(abort_code),
+                     sdo_abort_code_str(abort_code));
           }
         }
       }
@@ -417,7 +428,8 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
 void BdrBleComponent::mark_datapoint_unsupported_(uint8_t node_id,
                                                   uint16_t index,
                                                   uint8_t sub_index,
-                                                  uint8_t status_code) {
+                                                  uint8_t status_code,
+                                                  uint32_t abort_code) {
   for (auto &grp : this->poll_groups_) {
     for (auto &dp : grp.items) {
       if (dp.node_id == node_id && dp.index == index &&
@@ -451,8 +463,10 @@ void BdrBleComponent::mark_datapoint_unsupported_(uint8_t node_id,
 #endif
         ESP_LOGW(TAG,
                  "Datapoint 0x%04X:%02X (%s) reported unsupported by boiler "
-                 "(status=0x%02X); disabling polling",
-                 index, sub_index, entity_name, status_code);
+                 "(status=0x%02X, abort=0x%08X: %s); disabling polling",
+                 index, sub_index, entity_name, status_code,
+                 static_cast<unsigned>(abort_code),
+                 sdo_abort_code_str(abort_code));
       }
     }
   }
@@ -587,6 +601,35 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
       bool valid_numeric = decode_numeric_datapoint(
           dp.data_type, dp.scale, data, data_len, numeric_val, raw_enum_val);
 
+      // Boolean status flags (such as 0x502E:01..07) use 0xFF (255) for Yes/ON on some boards
+      // while the OBD enum table defines 0=No, 1=Yes. Normalize 0xFF -> 1 when applicable.
+      if (valid_numeric && dp.data_type == BDR_TYPE_ENUM &&
+          raw_enum_val == 0xFF && index == 0x502E) {
+        raw_enum_val = 1;
+        numeric_val = 1.0f;
+      }
+
+#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
+      const std::string *enum_label = nullptr;
+      if (valid_numeric && dp.data_type == BDR_TYPE_ENUM) {
+        uint64_t base_key = (static_cast<uint64_t>(index) << 24) |
+                            (static_cast<uint64_t>(sub_index) << 16);
+        uint64_t key = base_key | static_cast<uint64_t>(static_cast<uint16_t>(raw_enum_val));
+        auto it = this->enum_translations_.find(key);
+        if (it == this->enum_translations_.end() && raw_enum_val == 0xFF) {
+          auto it_one = this->enum_translations_.find(base_key | 1ULL);
+          if (it_one != this->enum_translations_.end()) {
+            it = it_one;
+            raw_enum_val = 1;
+            numeric_val = 1.0f;
+          }
+        }
+        if (it != this->enum_translations_.end()) {
+          enum_label = &it->second;
+        }
+      }
+#endif
+
 #ifdef USE_SENSOR
       if (valid_numeric) {
         for (auto *sens : dp.sensors) {
@@ -610,20 +653,6 @@ void BdrBleComponent::dispatch_datapoint_value_(uint8_t node_id, uint16_t index,
       if (valid_numeric) {
         for (auto *num : dp.numbers) {
           num->publish_state(numeric_val);
-        }
-      }
-#endif
-
-#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
-      const std::string *enum_label = nullptr;
-      if (valid_numeric && dp.data_type == BDR_TYPE_ENUM) {
-        uint64_t key =
-            (static_cast<uint64_t>(index) << 24) |
-            (static_cast<uint64_t>(sub_index) << 16) |
-            (static_cast<uint64_t>(static_cast<uint16_t>(raw_enum_val)));
-        auto it = this->enum_translations_.find(key);
-        if (it != this->enum_translations_.end()) {
-          enum_label = &it->second;
         }
       }
 #endif

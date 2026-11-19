@@ -259,4 +259,57 @@ bool is_transient_ble_auth_failure(uint8_t reason) {
   return reason == 0x60 || reason == 0x63 || reason == 0x66;
 }
 
+const char *sdo_abort_code_str(uint32_t abort_code) {
+  switch (abort_code) {
+    case 0x05030000UL:
+      return "Toggle bit not alternated";
+    case 0x05040000UL:
+      return "SDO protocol timed out";
+    case 0x05040001UL:
+      return "Command specifier not valid";
+    case 0x06010000UL:
+      return "Unsupported access to object (check auth_level)";
+    case 0x06010001UL:
+      return "Attempt to read a write-only object";
+    case 0x06010002UL:
+      return "Attempt to write a read-only object";
+    case 0x06020000UL:
+      return "Object does not exist in object dictionary";
+    case 0x06040041UL:
+      return "Object cannot be mapped to PDO";
+    case 0x06040043UL:
+      return "General parameter incompatibility";
+    case 0x06040047UL:
+      return "General internal incompatibility in device";
+    case 0x06060000UL:
+      return "Access failed due to hardware error";
+    case 0x06070010UL:
+      return "Data type/length mismatch";
+    case 0x06070012UL:
+      return "Data type mismatch (length too high)";
+    case 0x06070013UL:
+      return "Data type mismatch (length too low)";
+    case 0x06090011UL:
+      return "Sub-index does not exist";
+    case 0x06090030UL:
+      return "Value out of range";
+    case 0x06090031UL:
+      return "Value too high";
+    case 0x06090032UL:
+      return "Value too low";
+    case 0x08000000UL:
+      return "General SDO error";
+    case 0x08000020UL:
+      return "Data cannot be transferred or stored";
+    case 0x08000021UL:
+      return "Data cannot be transferred (local control)";
+    case 0x08000022UL:
+      return "Data cannot be transferred in present device state";
+    case 0x08000024UL:
+      return "No data available";
+    default:
+      return "Unknown SDO abort code";
+  }
+}
+
 }  // namespace esphome::bdr_ble

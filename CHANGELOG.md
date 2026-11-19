@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] - 2026-11-19
+
+### Added
+- **Human-Readable SDO Abort Code Diagnostics (`sdo_abort_code_str`):**
+  - Logs the exact 32-bit CANopen SDO abort code and description (e.g., `0x06020000: Object does not exist in object dictionary`, `0x06090011: Sub-index does not exist`, `0x06010000: Unsupported access to object (check auth_level)`) in `GetListResponse (0x09)`, `SingleReadNegAck (0x02)`, and `WriteNegAck (0x06)`.
+
+### Fixed
+- **`0x502E` Boolean Status Flag `0xFF` Normalization:**
+  - Normalizes `0xFF` (`255`) raw values to `1` (`Yes` / `On`) for boolean enum status flags (such as `0x502E:01..07`) so `sensor`, `text_sensor`, and `binary_sensor` entities all report consistent states when supported by the appliance.
+
+---
+
 ## [1.3.0] - 2026-11-18
 
 ### Added
@@ -106,7 +118,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.0.0...v1.1.0

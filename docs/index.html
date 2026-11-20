@@ -795,7 +795,6 @@ bdr_ble:
   pin: !secret strateo_ble_pin
   node_id: 1
   auth_level: 4
-  log_snapshot: true
 
 switch:
   - platform: ble_client
@@ -849,7 +848,7 @@ text_sensor:
   pin: !secret strateo_ble_pin    # Optional: 6-digit BLE pairing passkey (0..999999); omit for GTW-IoT
   node_id: 1                      # Optional: Default CANopen Node ID (default: 1 = main Control Unit)
   auth_level: 3                   # Optional: TEA authorization level 1..4 (default: 4)
-  log_snapshot: true              # Optional: Log BDR_SNAPSHOT lines on connect (default: true)</code></pre>
+  log_snapshot: true              # Optional: Log BDR_SNAPSHOT lines on connect (default: true; set to false to suppress)</code></pre>
 
         <p data-i18n="cfg_auth_explain">
           <strong>How <code>auth_level</code> works in the boiler controller:</strong><br />

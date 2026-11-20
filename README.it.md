@@ -76,7 +76,6 @@ bdr_ble:
   pin: !secret strateo_ble_pin
   node_id: 1
   auth_level: 4
-  log_snapshot: true
 
 switch:
   - platform: ble_client

@@ -684,6 +684,7 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->h_svc3_ack_cccd_ = this->has_pin_ ? HANDLE_SVC3_ACK_CCCD : 0;
         this->get_list_stage_ = 0;
         this->get_list_use_v200_ = true;
+        this->snapshot_sub_idx_ = 1;
         this->negotiated_mtu_ = 23;
         this->reset_session_state_(false);
         this->registry_.on_connect();
@@ -1541,7 +1542,7 @@ void BdrBleComponent::loop() {
           this->active_req_.last_activity_ms = now;
         }
       } else {
-        if (this->log_snapshot_ && !this->snapshot_logged_once_) {
+        if (this->log_snapshot_) {
           this->registry_.begin_snapshot_logging();
         }
         this->publish_status_("Ready");
@@ -1559,9 +1560,7 @@ void BdrBleComponent::loop() {
   if (this->state_ == STATE_READY) {
     // MEDIUM-10: Emit at most 2 BDR_SNAPSHOT lines per loop() tick to keep loop time < 15 ms
     if (this->registry_.is_snapshot_logging_active()) {
-      if (this->registry_.log_snapshot_chunk(2)) {
-        this->snapshot_logged_once_ = true;
-      }
+      this->registry_.log_snapshot_chunk(2);
     }
 
     // Wait for multi-fragment TX to finish before timing out or starting a new request

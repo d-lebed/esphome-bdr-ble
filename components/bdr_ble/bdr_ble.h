@@ -220,7 +220,6 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t default_node_id_{0x01};
   uint8_t auth_level_{4};
   bool log_snapshot_{true};
-  bool snapshot_logged_once_{false};
   uint32_t pin_{0};
   bool has_pin_{false};
   bool pairing_failed_{false};

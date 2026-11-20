@@ -78,7 +78,7 @@ esp32_ble_tracker:
     active: true
 
 ble_client:
-  - mac_address: "00:A0:50:XX:XX:XX"
+  - mac_address: "AA:BB:CC:DD:EE:FF"
     id: boiler_ble
 
 bdr_ble:
@@ -87,6 +87,7 @@ bdr_ble:
   pin: !secret strateo_ble_pin  # Omit 'pin:' for external GTW-IoT hubs (no PIN); wrap leading-zero PINs in quotes ("012345") in secrets.yaml
   node_id: 1
   auth_level: 4
+  log_snapshot: true
 
 switch:
   - platform: ble_client

@@ -8,10 +8,8 @@ import esphome.codegen as cg
 from esphome.components import text_sensor
 import esphome.config_validation as cv
 from esphome.const import (
-    CONF_ID,
-    CONF_INTERNAL,
-    CONF_NAME,
     CONF_STATUS,
+    CONF_TYPE,
     CONF_UPDATE_INTERVAL,
     ENTITY_CATEGORY_DIAGNOSTIC,
 )
@@ -24,39 +22,23 @@ from .. import (
     CONF_SUB_INDEX,
     BdrBleComponent,
 )
-from ..obd import (
-    DATA_TYPE_MAP,
-    TEXT_DATA_TYPES,
-    get_enum_mapping,
-    infer_sensor_metadata,
-    resolve_parameter,
+from ..obd import DATA_TYPE_MAP, TEXT_DATA_TYPES, infer_sensor_metadata
+from ..schema_helpers import (
+    CONF_RESOLVED_ENUM,
+    CONF_RESOLVED_INDEX,
+    CONF_RESOLVED_SUB,
+    CONF_RESOLVED_TYPE,
+    apply_default_name,
+    emit_flash_enum_table,
+    resolve_item_datapoint,
 )
 
 DEPENDENCIES = ["bdr_ble"]
 
-CONF_RESOLVED_INDEX = "_obd_index"
-CONF_RESOLVED_SUB = "_obd_sub"
-CONF_RESOLVED_TYPE = "_obd_type"
-CONF_RESOLVED_ENUM = "_obd_enum"
-
 
 def _preprocess_text_sensor_item(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise cv.Invalid("Text sensor configuration must be a mapping")
-    if CONF_PARAMETER not in value:
-        raise cv.Invalid(f"Missing required '{CONF_PARAMETER}'")
-
-    cfg = dict(value)
-    sub_override = cfg.get(CONF_SUB_INDEX)
-    if sub_override is not None:
-        sub_override = cv.int_range(min=0, max=255)(sub_override)
-
-    dp = resolve_parameter(cfg[CONF_PARAMETER], sub_override)
+    cfg, dp = resolve_item_datapoint(value, "Text sensor", "e.g. 'AM012' or '0x341F:01'")
     dtype = dp["type"]
-    if dtype == "Struct":
-        raise cv.Invalid(
-            f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) is a composite Struct table and cannot be polled as a single entity."
-        )
     if dtype not in TEXT_DATA_TYPES:
         raise cv.Invalid(
             f"OBD parameter '{cfg[CONF_PARAMETER]}' ({dp['name']}) has numeric type '{dtype}'. "
@@ -64,8 +46,7 @@ def _preprocess_text_sensor_item(value: Any) -> dict[str, Any]:
         )
 
     meta = infer_sensor_metadata(dp)
-    if CONF_NAME not in cfg and CONF_ID not in cfg and not cfg.get(CONF_INTERNAL, False):
-        cfg[CONF_NAME] = meta["default_name"]
+    apply_default_name(cfg, meta["default_name"])
 
     cfg[CONF_RESOLVED_INDEX] = dp["index"]
     cfg[CONF_RESOLVED_SUB] = dp["sub"]
@@ -74,37 +55,36 @@ def _preprocess_text_sensor_item(value: Any) -> dict[str, Any]:
     return cfg
 
 
+_TEXT_SENSOR_ITEM_BASE = text_sensor.text_sensor_schema().extend(
+    {
+        cv.Required(CONF_PARAMETER): cv.string,
+        cv.Optional(CONF_SUB_INDEX): cv.int_range(min=0, max=255),
+        cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
+        cv.Optional(CONF_TYPE): cv.string,
+        cv.Required(CONF_RESOLVED_INDEX): cv.int_,
+        cv.Required(CONF_RESOLVED_SUB): cv.int_,
+        cv.Required(CONF_RESOLVED_TYPE): cv.int_,
+        cv.Required(CONF_RESOLVED_ENUM): cv.string,
+    }
+)
+
 _OBD_TEXT_ITEM_SCHEMA = cv.All(
     _preprocess_text_sensor_item,
-    text_sensor.text_sensor_schema().extend(
+    _TEXT_SENSOR_ITEM_BASE.extend(
         {
-            cv.Required(CONF_PARAMETER): cv.string,
-            cv.Optional(CONF_SUB_INDEX): cv.int_range(min=0, max=255),
-            cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
             cv.Optional(CONF_UPDATE_INTERVAL): cv.positive_time_period_milliseconds,
-            cv.Required(CONF_RESOLVED_INDEX): cv.int_,
-            cv.Required(CONF_RESOLVED_SUB): cv.int_,
-            cv.Required(CONF_RESOLVED_TYPE): cv.int_,
-            cv.Required(CONF_RESOLVED_ENUM): cv.string,
         }
     ),
 )
 
 _SINGLE_OBD_TEXT_SCHEMA = cv.All(
     _preprocess_text_sensor_item,
-    text_sensor.text_sensor_schema().extend(
+    _TEXT_SENSOR_ITEM_BASE.extend(
         {
             cv.GenerateID(CONF_BDR_BLE_ID): cv.use_id(BdrBleComponent),
-            cv.Required(CONF_PARAMETER): cv.string,
-            cv.Optional(CONF_SUB_INDEX): cv.int_range(min=0, max=255),
-            cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
             cv.Optional(
                 CONF_UPDATE_INTERVAL, default="30s"
             ): cv.positive_time_period_milliseconds,
-            cv.Required(CONF_RESOLVED_INDEX): cv.int_,
-            cv.Required(CONF_RESOLVED_SUB): cv.int_,
-            cv.Required(CONF_RESOLVED_TYPE): cv.int_,
-            cv.Required(CONF_RESOLVED_ENUM): cv.string,
         }
     ),
 )
@@ -160,15 +140,16 @@ async def _register_one_text_sensor(
     )
     enum_name = item_cfg.get(CONF_RESOLVED_ENUM, "")
     if enum_name:
-        for enum_val, enum_desc in get_enum_mapping(enum_name).items():
-            cg.add(
-                hub.register_enum_translation(
-                    item_cfg[CONF_RESOLVED_INDEX],
-                    item_cfg[CONF_RESOLVED_SUB],
-                    enum_val,
-                    enum_desc,
-                )
+        table_expr, table_len = emit_flash_enum_table(enum_name)
+        cg.add(
+            hub.register_enum_table(
+                item_cfg[CONF_RESOLVED_INDEX],
+                item_cfg[CONF_RESOLVED_SUB],
+                table_expr,
+                table_len,
+                node_id_val,
             )
+        )
 
 
 async def to_code(config: dict[str, Any]) -> None:

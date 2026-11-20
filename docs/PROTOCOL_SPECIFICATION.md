@@ -6,7 +6,7 @@ Technical specification of the Bluetooth Low Energy (BLE) and `RUB v2.01` (CANop
 
 ## 1. Boiler BLE Identity & Advertising
 
-- **BLE MAC Address**: `00:A0:50:XX:XX:XX` (`PUBLIC` address type `0`)
+- **BLE MAC Address**: `AA:BB:CC:DD:EE:FF` (`PUBLIC` address type `0`)
 - **Advertised Name**: `EHC-08_1234567890` (Appliance code `EHC-08`, serial `1234567890`)
 - **Manufacturer Specific Data**: `0x42 0x44 0x52` (`"BDR"` — BDR Thermea Group)
 - **Advertised Service UUID**: `f8fc98e4-5919-4a5c-852e-dfe04ad383c0`
@@ -218,7 +218,7 @@ After desegmenting from `ab9af948-fb86-492d-820d-bdea2dcb7ecf` (handle `20`), ve
   `02 01 00 00 01 03 <NodeId> <Index_HI> <Index_LO> <SubIndex> <Data...>`
   where:
   - **`NodeId = 0x01`** is the main boiler/heat-pump Control Unit (`CU`) on De Dietrich Strateo (`EHC-08`).
-  - `payload[10..]` (`<Data...>`) contains the raw datapoint bytes in **Little-Endian** order (`U8`/`I8` = 1 byte, `U16`/`I16` = 2 bytes LE, `U32`/`I32` = 4 bytes LE).
+  - `payload[10..]` (`<Data...>`) contains the raw datapoint bytes in **Little-Endian** order (`U8`/`I8` = 1 byte, `U16`/`I16` = 2 bytes LE, `U32`/`I32` = 4 bytes LE, `Enum` = 1 or 2 bytes LE, `TimeOfDay` = 6 bytes CiA 301 LE `[uint32_t ms_since_midnight, uint16_t days_since_1984]`).
   - For 16-bit signed temperatures (`I16`), `0x8000` (`-32768`) indicates sensor not connected / N/A.
 - **Error / SDO Abort (`payload[3] == 0x00 && payload[4] == 0x02`)**:
   `02 01 00 00 02 03 <NodeId> <Index_HI> <Index_LO> <SubIndex> <SDO_Abort_Code_LE(4B)>`
@@ -227,15 +227,17 @@ After desegmenting from `ab9af948-fb86-492d-820d-bdea2dcb7ecf` (handle `20`), ve
 - **Write Confirmed Request (`Function = 0x04`, 10-byte header + `data_len` bytes)**:
   `02 01 00 00 04 03 <NodeId> <Index_HI> <Index_LO> <SubIndex> <Data_LE...>`
   where `<Data_LE...>` is encoded in **Little-Endian** order:
-  - `U8`, `I8`, `Enum`: **1 byte** (`raw & 0xFF`)
+  - `U8`, `I8`: **1 byte** (`raw & 0xFF`)
+  - `Enum`: **1 or 2 bytes LE** according to the datapoint's wire length (`dp_len` in `0x502B`)
   - `U16`, `I16`: **2 bytes LE** (`raw & 0xFF`, `(raw >> 8) & 0xFF`)
   - `U32`, `I32`: **4 bytes LE**
+  - `VisibleString`: fixed-length UTF-8 byte array null-padded (`0x00`) to `max_len` bytes (truncated safely on UTF-8 codepoint boundaries)
 - **Write Positive Ack (`Function = 0x05`, 10 bytes)**:
   `02 01 00 00 05 03 <NodeId> <Index_HI> <Index_LO> <SubIndex>`
 - **Write Negative Ack / SDO Abort (`Function = 0x06`, 14 bytes)**:
   `02 01 00 00 06 03 <NodeId> <Index_HI> <Index_LO> <SubIndex> <SDO_Abort_Code_LE(4B)>`
 
-### Live Verified Trace from De Dietrich Strateo (`00:A0:50:XX:XX:XX`)
+### Live Verified Trace from De Dietrich Strateo (`AA:BB:CC:DD:EE:FF`)
 ```text
 TX handle=31 (0B): <empty>
 NOTIFY handle=33 (8B): 56 34 12 50 17 90 8F 86
@@ -295,8 +297,11 @@ To read multiple parameters in a single round-trip (up to ~1412–1518 bytes per
     - `elem[5]`: `0x00`
     - `elem[6..7]`: `data_len` (`uint16` Big-Endian: `(elem[6] << 8) | elem[7]`)
     - `elem[8 .. 8 + data_len - 1]`: `data` (`data_len` bytes in Little-Endian; if `status == 0x02`, 4-byte SDO Abort code)
-- **Automatic Unsupported Datapoint Pruning (`Auto-Skip`)**:
-  - When a datapoint in a `GetListResponse` returns `status != 0x01` (or a single read returns `Function = 0x02` SDO Abort for a non-existent object), `bdr_ble` logs a warning once and marks that datapoint as `unsupported`, excluding it from all subsequent `GetListRequest` batches for the duration of the BLE connection.
+- **Smart SDO Abort Classification, `Auto-Skip` & Session Recovery**:
+  - Permanent unsupported SDO abort codes (`0x06020000` Object does not exist, `0x06090011` Sub-index does not exist, `0x06010001` Write-only) mark the datapoint as `unsupported` (`Auto-Skip`).
+  - `GetList`-incompatible SDO abort codes (`0x06040043`, `0x06070010`) switch that datapoint to individual `ReadRequest (0x00)` polling (`single_read_only`).
+  - Transient CAN bus timeouts (`0x05040000`, `0x08000000`, `0x08000022`, `0x08000024`) keep the datapoint in the `GetList` batch for the next cycle.
+  - If `0x06010000` (`Unsupported access to object`) is returned on a secondary `node_id`, `bdr_ble` sends a per-node CAN channel upgrade (`02 00 00 02 04 00 <node_id> <auth_level>`); if returned on a previously working datapoint, `bdr_ble` automatically re-authenticates the 10-second `RUB v2.01` session.
 
 ---
 

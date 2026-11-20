@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Chunked `BDR_SNAPSHOT` Logging & `log_snapshot` Option:**
+  - Added `log_snapshot: true/false` (default `true`) on the `bdr_ble:` hub. Snapshot log lines (`BDR_SNAPSHOT:...`) are now emitted at most 2 lines per `loop()` tick and logged once per boot, eliminating the `>300 ms` `ble_client` main-loop blocking warning on reconnect.
+- **Raw Unregistered Hex Datapoint Type Override (`type:`):**
+  - Added optional `type:` (`U8`, `I8`, `U16`, `I16`, `U32`, `I32`, `Enum`, `VisibleString`, `OctetString`, `TimeOfDay`) on platform items to allow polling/testing newly discovered `BDR_SNAPSHOT` hex indices not yet present in `obd_catalog.json`.
+- **Multi-Node CAN Channel Authorization Upgrade (`FUNC = 0x04`):**
+  - Automatically sends CAN-IP per-node channel upgrade (`02 00 00 02 04 00 <node_id> <auth_level>`) when a secondary `node_id` returns `SDO_ABORT_UNSUPPORTED_ACCESS (0x06010000)`.
+- **Disconnect Staleness Reporting (`NAN`):**
+  - Publishes `NAN` (`unavailable`) to numeric `sensor` entities if the BLE session remains disconnected for more than 90 seconds or enters pairing lockout backoff.
+- **Host C++20 Unit Test Suite (`tests/test_bdr_protocol.cpp`):**
+  - Added standalone host unit tests verifying CRC-16/MODBUS framing, 32-round TEA test vectors, numeric/bounds codecs, UTF-8 safe truncation, 6-byte CiA 301 `TimeOfDay` decoding, SDO abort classification, and `DirectChannelTransport` multi-segment framing.
+
+### Changed
+- **Modular 4-Layer C++ & Shared Python Schema Architecture:**
+  - Split `components/bdr_ble/` into `bdr_protocol.h/.cpp` (pure codecs/crypto), `bdr_transport.h/.cpp` (`DirectChannelTransport` TX/RX segmentation & CRC), `bdr_registry.h/.cpp` (`BdrDatapointRegistry` global deduplication, `0x502B` descriptors, Flash enum lookup, and entity dispatch), `bdr_ble.h/.cpp` (BLE GATT/GAP lifecycle, Service 3 + RUB auth, and `ActiveRequest` transaction orchestration), and `schema_helpers.py`.
+- **Zero-Heap Flash `EnumEntry` Tables:**
+  - Replaced heap-allocated `std::map<uint64_t, std::string>` enum translation maps and `BdrBleSelect` option maps with `static constexpr EnumEntry` arrays in Flash (`.rodata`), emitted once per unique OBD enum table.
+- **Global Cross-Group Datapoint Deduplication & Byte-Budgeted `GetList`:**
+  - Deduplicates `(node_id, index, sub_index)` across all poll groups (promoting shared parameters to the fastest requested `update_interval` and preserving non-trivial `scale` factors) and caps `GetListRequest (0x08)` batches at both 16 items and `<= 240` estimated RX bytes.
+
+### Fixed
+- **`GetListResponse (0x09)` Request Correlation & Smart SDO Abort Classification:**
+  - Validates incoming `GetListResponse` frames against the active `ActiveRequest` count and first datapoint, enforces a 500 ms post-timeout cooldown, and distinguishes permanent unsupported SDO aborts (`0x06020000`, `0x06090011`, `0x06010001`) from `GetList`-incompatible aborts (`0x06040043`, `0x06070010`) and transient CAN timeouts (`0x05040000`, `0x08000000`) so transient timeouts never permanently degrade batch polling into `single_read_only`.
+- **Hardware `0x502B` Wire-Size & Min/Max Bounds Validation:**
+  - Removed the hardcoded `0x30000000` `U32`/`I32` range heuristic in `decode_numeric_datapoint()` and replaced it with exact `0x502B` `dp_len` wire-length checking, hardware `[raw_min, raw_max]` range validation, and a single-cycle jump guard for `total_increasing` counters.
+- **Zero `REG_FOR_NOTIFY after services released` Warnings on Connect:**
+  - Holds `ClientState::CONNECTED` during GATT discovery and drives notification registration and CCCD descriptor writes deterministically via `ESP_GATTC_REG_FOR_NOTIFY_EVT` and `ESP_GATTC_WRITE_DESCR_EVT` after link encryption before transitioning to `ClientState::ESTABLISHED`.
+- **Authoritative Write State Publishing & RUB Session Expiry Recovery:**
+  - Removed optimistic `publish_state()` calls prior to write confirmation in `BdrBleNumber`, `BdrBleSelect`, and `BdrBleText`; writes can now be queued during initial connection/snapshot and publish state only upon authoritative hardware readback.
+  - Automatically re-authenticates the `RUB v2.01` session when a previously working datapoint returns `SDO_ABORT_UNSUPPORTED_ACCESS (0x06010000)` after a 10-second idle expiry instead of permanently disabling the datapoint.
+- **`GTW-IoT` Service 3 Skip, 2-Byte `Select` Writes, 6-Byte `TimeOfDay` & UTF-8 Safe Truncation:**
+  - Skips Service 3 unlock immediately when Service 3 UUIDs are absent in GATT DB (e.g., `GTW-IoT`).
+  - Serializes 1-byte or 2-byte Little-Endian enum payloads in `BdrBleSelect::control()` according to parameter wire size.
+  - Decodes 6-byte CANopen CiA 301 `TIME_OF_DAY` (`ms_since_midnight` + `days_since_1984`) for `TimeOfDay` parameters (`0x3421..0x3423`).
+  - Truncates `BdrBleText` writes on valid UTF-8 codepoint boundaries (`utf8_safe_truncate_len`) and fixes `NameError` in `obd.py:resolve_parameter()` on unknown hex indices.
+
 ---
 
 ## [1.4.0] - 2026-11-19

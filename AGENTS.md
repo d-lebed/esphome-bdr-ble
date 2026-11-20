@@ -30,12 +30,14 @@ This repository contains the **`bdr_ble`** ESPHome external component for **BDR 
 
 ```text
 components/bdr_ble/
-├── __init__.py                         # Hub schema (ble_client_id, pin, node_id, auth_level)
+├── __init__.py                         # Hub schema (ble_client_id, pin, node_id, auth_level, log_snapshot)
 ├── obd.py                              # Compile-time OBD dictionary resolver & ESPHome metadata inference
+├── schema_helpers.py                   # Shared platform schema builders & Flash constexpr EnumEntry codegen
 ├── obd_catalog.json                    # Compact JSON catalog (3,092 datapoints, 204 enums, FGs, models)
-├── bdr_protocol.h / .cpp               # Protocol constants, CRC16, 32-round TEA cipher, and value codecs
-├── bdr_ble.h / .cpp                    # BdrBleComponent lifecycle, BLE GATT/GAP state machine, TX & scheduler
-├── bdr_ble_parser.cpp                  # RX DirectChannel reassembly, RUB auth, 0x502B snapshot & state dispatch
+├── bdr_protocol.h / .cpp               # Pure functions: protocol constants, CRC16, TEA cipher & value codecs
+├── bdr_transport.h / .cpp              # DirectChannelTransport: 20B TX segmentation, RX reassembly & CRC check
+├── bdr_registry.h / .cpp               # BdrDatapointRegistry: global deduplication, Flash EnumEntry, 0x502B bounds & dispatch
+├── bdr_ble.h / .cpp                    # BdrBleComponent: BLE GATT/GAP lifecycle, Service 3 + RUB auth & ActiveRequest slot
 ├── binary_sensor/
 │   └── __init__.py                     # Boolean/two-state status binary_sensor platform (single & grouped syntax)
 ├── number/
@@ -46,11 +48,16 @@ components/bdr_ble/
 │   └── bdr_ble_select.h / .cpp         # BdrBleSelect entity class (Parented<BdrBleComponent>)
 ├── sensor/
 │   └── __init__.py                     # Numeric/Enum sensor platform (single & grouped batch syntax)
+├── text/
+│   ├── __init__.py                     # Writable VisibleString parameter platform (single & grouped syntax)
+│   └── bdr_ble_text.h / .cpp           # BdrBleText entity class (Parented<BdrBleComponent>)
 └── text_sensor/
     └── __init__.py                     # Status & Enum/VisibleString/TimeOfDay text_sensor platform
 docs/
 ├── PROTOCOL_SPECIFICATION.md           # Full BLE GATT, Service 3, RUB v2.01, 0x08 GetList & 0x502B spec
 └── configurator.html                   # Standalone HTML+JS ESPHome YAML constructor (model, FG & snapshot filters)
+tests/
+└── test_bdr_protocol.cpp               # Host-native C++20 unit test suite for bdr_protocol & bdr_transport
 ```
 
 ### Zero Firmware Bloat Architecture

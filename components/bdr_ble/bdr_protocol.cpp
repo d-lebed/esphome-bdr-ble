@@ -426,9 +426,9 @@ bool decode_time_of_day(const uint8_t *data, size_t data_len,
       return false;
     }
     uint32_t total_sec = ms_since_midnight / 1000UL;
-    uint32_t hours = total_sec / 3600UL;
-    uint32_t minutes = (total_sec % 3600UL) / 60UL;
-    uint32_t seconds = total_sec % 60UL;
+    unsigned hours = static_cast<unsigned>(total_sec / 3600UL);
+    unsigned minutes = static_cast<unsigned>((total_sec % 3600UL) / 60UL);
+    unsigned seconds = static_cast<unsigned>(total_sec % 60UL);
 
     char buf[32];
     if (days_since_1984 == 0) {
@@ -449,8 +449,8 @@ bool decode_time_of_day(const uint8_t *data, size_t data_len,
     int32_t y = static_cast<int32_t>(yoe) + era * 400;
     uint32_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     uint32_t mp = (5 * doy + 2) / 153;
-    uint32_t d = doy - (153 * mp + 2) / 5 + 1;
-    uint32_t m = mp < 10 ? mp + 3 : mp - 9;
+    unsigned d = static_cast<unsigned>(doy - (153 * mp + 2) / 5 + 1);
+    unsigned m = static_cast<unsigned>(mp < 10 ? mp + 3 : mp - 9);
     y += (m <= 2) ? 1 : 0;
 
     if (seconds == 0) {
@@ -468,7 +468,9 @@ bool decode_time_of_day(const uint8_t *data, size_t data_len,
   if (data_len == 2) {
     if (data[0] < 24 && data[1] < 60) {
       char buf[16];
-      snprintf(buf, sizeof(buf), "%02u:%02u", data[0], data[1]);
+      snprintf(buf, sizeof(buf), "%02u:%02u",
+               static_cast<unsigned>(data[0]),
+               static_cast<unsigned>(data[1]));
       out_str = buf;
       return true;
     }

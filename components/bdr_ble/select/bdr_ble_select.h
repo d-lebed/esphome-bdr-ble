@@ -3,8 +3,10 @@
 #include "esphome/components/select/select.h"
 #include "esphome/core/helpers.h"
 #include "../bdr_ble.h"
+#include "../bdr_registry.h"
 
-#include <map>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace esphome::bdr_ble {
@@ -17,8 +19,9 @@ class BdrBleSelect final : public select::Select, public Parented<BdrBleComponen
     this->sub_index_ = sub_index;
   }
 
-  void add_enum_option(int raw_value, const char *label) {
-    this->label_to_val_[label] = raw_value;
+  void set_enum_table(const EnumEntry *table, size_t len) {
+    this->enum_table_ = table;
+    this->enum_table_len_ = len;
   }
 
  protected:
@@ -27,7 +30,8 @@ class BdrBleSelect final : public select::Select, public Parented<BdrBleComponen
   uint8_t node_id_{0x01};
   uint16_t index_{0};
   uint8_t sub_index_{0};
-  std::map<std::string, int> label_to_val_;
+  const EnumEntry *enum_table_{nullptr};
+  size_t enum_table_len_{0};
 };
 
 }  // namespace esphome::bdr_ble

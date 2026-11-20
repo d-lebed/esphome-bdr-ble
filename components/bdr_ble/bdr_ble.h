@@ -30,11 +30,12 @@
 #include <esp_gap_ble_api.h>
 #include <cstdint>
 #include <deque>
-#include <map>
 #include <string>
 #include <vector>
 
 #include "bdr_protocol.h"
+#include "bdr_registry.h"
+#include "bdr_transport.h"
 
 namespace esphome::bdr_ble {
 
@@ -45,39 +46,27 @@ struct PendingWrite {
   std::vector<uint8_t> data;
 };
 
-struct DatapointRegistration {
-  uint8_t node_id{0x01};
-  uint16_t index{0};
-  uint8_t sub_index{0};
-  BdrDataType data_type{BDR_TYPE_U16};
-  float scale{1.0f};
-  uint8_t max_len{0};
-  bool unsupported{false};
-  bool single_read_only{false};
-#ifdef USE_SENSOR
-  std::vector<sensor::Sensor *> sensors;
-#endif
-#ifdef USE_BINARY_SENSOR
-  std::vector<binary_sensor::BinarySensor *> binary_sensors;
-#endif
-#ifdef USE_TEXT_SENSOR
-  std::vector<text_sensor::TextSensor *> text_sensors;
-#endif
-#ifdef USE_NUMBER
-  std::vector<number::Number *> numbers;
-#endif
-#ifdef USE_SELECT
-  std::vector<select::Select *> selects;
-#endif
-#ifdef USE_TEXT
-  std::vector<text::Text *> texts;
-#endif
+enum class RequestKind : uint8_t {
+  NONE = 0,
+  SNAPSHOT,
+  READ,
+  WRITE,
+  GET_LIST,
+  KEEPALIVE,
+  NODE_UPGRADE,
 };
 
-struct PollGroup {
-  uint32_t interval_ms{30000};
-  uint32_t last_cycle_start_ms{0};
-  std::vector<DatapointRegistration> items;
+struct ActiveRequest {
+  RequestKind kind{RequestKind::NONE};
+  uint8_t node_id{0};
+  uint16_t index{0};
+  uint8_t sub_index{0};
+  uint8_t expected_list_count{0};
+  uint8_t first_list_node{0};
+  uint16_t first_list_index{0};
+  uint8_t first_list_sub{0};
+  uint32_t started_ms{0};
+  uint32_t last_activity_ms{0};
 };
 
 class BdrBleComponent : public Component, public ble_client::BLEClientNode {
@@ -90,6 +79,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void set_default_node_id(uint8_t node_id) { this->default_node_id_ = node_id; }
   uint8_t get_default_node_id() const { return this->default_node_id_; }
   void set_auth_level(uint8_t auth_level) { this->auth_level_ = auth_level; }
+  void set_log_snapshot(bool log_snapshot) { this->log_snapshot_ = log_snapshot; }
   void set_pin(uint32_t pin) {
     this->pin_ = pin;
     this->has_pin_ = true;
@@ -115,8 +105,9 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
 #endif
 
 #if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
-  void register_enum_translation(uint16_t index, uint8_t sub_index, int value,
-                                 const char *description);
+  void register_enum_table(uint16_t index, uint8_t sub_index,
+                           const EnumEntry *table, size_t len,
+                           uint8_t node_id = 0xFF);
 #endif
 
 #ifdef USE_NUMBER
@@ -135,8 +126,16 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                      uint32_t interval_ms, uint8_t node_id = 0xFF);
 #endif
 
-  void queue_write_datapoint(uint8_t node_id, uint16_t index, uint8_t sub_index,
+  bool queue_write_datapoint(uint8_t node_id, uint16_t index, uint8_t sub_index,
                              const std::vector<uint8_t> &data);
+
+  uint8_t get_datapoint_wire_size(uint8_t node_id, uint16_t index,
+                                  uint8_t sub_index) const {
+    uint8_t resolved_node =
+        (node_id == 0xFF) ? this->default_node_id_ : node_id;
+    return this->registry_.get_datapoint_wire_size(resolved_node, index,
+                                                   sub_index);
+  }
 
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                            esp_ble_gattc_cb_param_t *param) override;
@@ -157,55 +156,65 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
     STATE_AUTH_FAILED,
   };
 
-  enum InFlightType : uint8_t {
-    IN_FLIGHT_NONE = 0,
-    IN_FLIGHT_SNAPSHOT,
-    IN_FLIGHT_READ,
-    IN_FLIGHT_WRITE,
-    IN_FLIGHT_GET_LIST,
-    IN_FLIGHT_KEEPALIVE,
+  enum CccdSubState : uint8_t {
+    CCCD_IDLE = 0,
+    CCCD_WAIT_REG_NOTIFY,
+    CCCD_WAIT_WRITE_DESCR,
   };
 
-  DatapointRegistration &get_or_create_datapoint_(uint32_t interval_ms, uint8_t node_id,
-                                                  uint16_t index, uint8_t sub_index,
-                                                  BdrDataType data_type, float scale);
+  uint8_t resolve_node_id_(uint8_t node_id) const {
+    return (node_id == 0xFF) ? this->default_node_id_ : node_id;
+  }
 
+  void reset_session_state_(bool clear_writes);
+  void reset_active_transaction_();
   void publish_status_(const char *msg);
   void resolve_gatt_handles_();
   void handle_pairing_failure_(const uint8_t *bda, uint8_t reason);
   void log_rx_hex_(const char *prefix, const uint8_t *data, uint16_t len,
                    bool info_level = false);
 
+  void begin_subscribing_();
+  void advance_subscribing_();
+  void start_unlock_sequence_();
+  void start_rub_auth_(const char *status_msg = "Unlocking CAN-BUS (RUB v2.01)");
+
   void write_cccd_(uint16_t cccd_handle);
   void send_zero_length_write_(uint16_t char_handle);
-  void send_direct_channel_(const uint8_t *payload, size_t len);
+  bool send_direct_channel_(const uint8_t *payload, size_t len);
   void send_next_tx_fragment_();
-  void send_read_param_(uint8_t node_id, uint16_t index, uint8_t sub_index);
-  void send_write_param_(uint8_t node_id, uint16_t index, uint8_t sub_index,
+  bool send_read_param_(uint8_t node_id, uint16_t index, uint8_t sub_index);
+  bool send_write_param_(uint8_t node_id, uint16_t index, uint8_t sub_index,
                          const uint8_t *data, size_t data_len);
-  void send_get_list_batch_(const PollGroup &grp,
-                            const std::vector<size_t> &item_indices,
-                            bool use_v200_header);
+  bool send_get_list_batch_(const PollGroup &grp, const size_t *item_indices,
+                            size_t count, bool use_v200_header);
+  bool send_node_channel_upgrade_(uint8_t node_id);
 
-  // Implemented in bdr_ble_parser.cpp
   void handle_notify_(uint16_t handle, const uint8_t *data, uint16_t len);
   void handle_direct_segment_(const uint8_t *data, uint16_t len);
   void handle_direct_payload_(const uint8_t *payload, size_t len);
   void handle_single_read_ack_(uint8_t node_id, uint16_t index, uint8_t sub_index,
                                const uint8_t *data, size_t data_len);
   void handle_get_list_response_(const uint8_t *payload, size_t len);
-  void dispatch_datapoint_value_(uint8_t node_id, uint16_t index, uint8_t sub_index,
-                                 const uint8_t *data, size_t data_len);
-  void mark_datapoint_unsupported_(uint8_t node_id, uint16_t index,
-                                   uint8_t sub_index, uint8_t status_code,
-                                   uint32_t abort_code = 0);
-  void handle_snapshot_descriptor_(uint8_t sub_index, const uint8_t *data,
-                                   size_t data_len);
-  void log_appliance_snapshot_();
+  void handle_access_denied_(uint8_t node_id, uint16_t index, uint8_t sub_index,
+                             uint8_t status_code, uint32_t abort_code,
+                             bool from_get_list);
+  bool is_node_upgraded_(uint8_t node_id) const {
+    return (node_id < 32) && ((this->upgraded_nodes_mask_ & (1UL << node_id)) != 0);
+  }
+  void mark_node_upgraded_(uint8_t node_id) {
+    if (node_id < 32) {
+      this->upgraded_nodes_mask_ |= (1UL << node_id);
+    }
+  }
 
   State state_{STATE_DISCONNECTED};
+  CccdSubState cccd_substate_{CCCD_IDLE};
+  bool cccd_manual_write_sent_{false};
   uint8_t default_node_id_{0x01};
   uint8_t auth_level_{4};
+  bool log_snapshot_{true};
+  bool snapshot_logged_once_{false};
   uint32_t pin_{0};
   bool has_pin_{false};
   bool pairing_failed_{false};
@@ -215,7 +224,10 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t pairing_fail_count_{0};
   bool pairing_backoff_active_{false};
   uint32_t pairing_backoff_until_ms_{0};
+  uint32_t disconnected_since_ms_{0};
+  bool stale_published_{false};
   uint32_t last_action_ms_{0};
+  uint32_t cooldown_until_ms_{0};
   uint8_t cccd_step_{0};
   uint8_t retry_count_{0};
   uint8_t consecutive_timeouts_{0};
@@ -234,35 +246,21 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint16_t h_svc3_resp_{HANDLE_SVC3_RESP};
   uint16_t h_svc3_ack_{HANDLE_SVC3_ACK};
   uint16_t h_svc3_ack_cccd_{HANDLE_SVC3_ACK_CCCD};
-  std::vector<uint32_t> discovered_datapoints_;
 
-  std::vector<PollGroup> poll_groups_;
+  DirectChannelTransport transport_;
+  BdrDatapointRegistry registry_;
   std::deque<PendingWrite> write_queue_;
+  ActiveRequest active_req_;
   int active_group_idx_{-1};
   size_t active_item_idx_{0};
-  InFlightType in_flight_type_{IN_FLIGHT_NONE};
-  uint8_t in_flight_node_{0x01};
-  uint16_t in_flight_index_{0};
-  uint8_t in_flight_sub_{0};
-  uint32_t last_req_ms_{0};
   uint8_t get_list_stage_{0};  // 0=try 02 00..00 (v2.00), 1=try 02 01..03 (v2.01), 2=confirmed, 3=fallback to single 0x00
   bool get_list_use_v200_{true};
   uint16_t negotiated_mtu_{23};
-
-  std::vector<uint8_t> tx_frame_buf_;
-  size_t tx_frame_offset_{0};
-  uint8_t tx_seg_idx_{0};
-  bool tx_in_progress_{false};
-
-  std::vector<uint8_t> rx_reassembly_buf_;
-  uint8_t expected_rx_seg_{0};
-  uint32_t last_rx_seg_ms_{0};
+  uint32_t upgraded_nodes_mask_{0};
+  int16_t pending_upgrade_node_{-1};
 
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *status_text_{nullptr};
-#endif
-#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
-  std::map<uint64_t, std::string> enum_translations_;
 #endif
 };
 

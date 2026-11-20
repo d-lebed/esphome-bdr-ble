@@ -90,7 +90,9 @@ def _load_catalog() -> dict[str, Any]:
 
 
 def resolve_parameter(
-    param: str | int, sub_index_override: int | None = None
+    param: str | int,
+    sub_index_override: int | None = None,
+    raw_type: str | None = None,
 ) -> dict[str, Any]:
     """Resolve a parameter specified by FriendlyName (AC005), OBD Name (varAp...), or hex Index (0x5044:00)."""
     cat = _load_catalog()
@@ -112,11 +114,41 @@ def resolve_parameter(
             res = dict(dp)
             if explicit_sub is not None:
                 res["sub"] = explicit_sub
+            if raw_type is not None:
+                if raw_type not in DATA_TYPE_MAP:
+                    raise cv.Invalid(
+                        f"Unsupported raw OBD data type '{raw_type}'. "
+                        f"Allowed: {', '.join(DATA_TYPE_MAP.keys())}"
+                    )
+                res["type"] = raw_type
             return res
-        # Allow raw unregistered hex index:sub_index with default U16/I16 fallback if explicitly given
+
+        sub_val = explicit_sub if explicit_sub is not None else 0
+        if raw_type is not None:
+            if raw_type not in DATA_TYPE_MAP:
+                raise cv.Invalid(
+                    f"Unsupported raw OBD data type '{raw_type}'. "
+                    f"Allowed: {', '.join(DATA_TYPE_MAP.keys())}"
+                )
+            return {
+                "index": idx,
+                "sub": sub_val,
+                "name": f"raw_0x{idx:04X}_{sub_val:02X}",
+                "code": f"0x{idx:04X}:{sub_val:02X}",
+                "type": raw_type,
+                "gain": 1.0,
+                "unit": "",
+                "cls": "Parameter",
+                "desc": f"Raw OBD parameter 0x{idx:04X}:0x{sub_val:02X}",
+                "label": f"OBD 0x{idx:04X}:{sub_val:02X}",
+                "rw": True,
+                "len": 20,
+            }
+
         raise cv.Invalid(
-            f"Unknown OBD hex index 0x{idx:04X}:0x{sub:02X}. "
-            f"Use a valid FriendlyName (e.g. 'AC005'), OBD Name (e.g. 'varApTOutside'), or known hex index."
+            f"Unknown OBD hex index 0x{idx:04X}:0x{(explicit_sub or 0):02X}. "
+            f"Use a valid FriendlyName (e.g. 'AC005'), OBD Name (e.g. 'varApTOutside'), "
+            f"known hex index, or specify 'type:' explicitly for raw unregistered hex indices."
         )
 
     if ":" in param_str:

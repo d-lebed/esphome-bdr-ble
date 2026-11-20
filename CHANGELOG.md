@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.5.0] - 2026-11-20
+
 ### Added
 - **Chunked `BDR_SNAPSHOT` Logging & `log_snapshot` Option:**
   - Added `log_snapshot: true/false` (default `true`) on the `bdr_ble:` hub. Snapshot log lines (`BDR_SNAPSHOT:...`) are now emitted at most 2 lines per `loop()` tick on each BLE connection, eliminating the `>300 ms` `ble_client` main-loop blocking warning.
@@ -169,7 +173,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.2.0...v1.3.0

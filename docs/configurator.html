@@ -1546,6 +1546,7 @@
         lines.push("  pin: !secret strateo_ble_pin  # Omit 'pin:' if using an external GTW-IoT hub (no PIN)");
         lines.push("  node_id: 1");
         lines.push("  auth_level: " + effectiveAuthLevel);
+        lines.push("  log_snapshot: true");
         lines.push("");
         lines.push("switch:");
         lines.push("  - platform: ble_client");

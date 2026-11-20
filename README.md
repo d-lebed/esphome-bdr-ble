@@ -47,9 +47,10 @@ Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Blu
 ## Hardware Compatibility (Tested vs. Untested)
 
 - **✅ Physically Tested & Verified:**
-  - **De Dietrich Strateo R32** (`EHC-08` controller board, BLE firmware `01.00`, RUB protocol `02.01`) with an **ESP32-C6** (`esp-idf`).
+  - **De Dietrich Strateo R32** (`EHC-08` controller board, onboard BLE `01.00` with 6-digit PIN, RUB protocol `02.01`).
+  - **Remeha Elga Ace All-in-One** (`EHC-15` hybrid heat pump/boiler via external **Remeha Home Hub `GTW-IoT`** in PIN-less mode).
 - **⚠️ Theoretical / Untested Compatibility (Shared MK3 BLE / CAN-IP Platform):**
-  - Other BDR Thermea appliances equipped with the **MK3 HMI / BLE module** (`EHC-04`, `EHC-05`, `EHC-07`, `EHC-09`, `EHC-14`, `CU-08` / `CU-GH08`, `CU-09`, `CU-16`, `CU-13`, `CU-OH02`, `CU-HW01`, `CU-EB`, `EEC-01 / SCB-*` across **De Dietrich**, **Baxi**, **Remeha**, **Brötje**, **Chappée**, and **Oertli**) use the same BLE GATT service and `obd_catalog.json` dictionary in the official service app, but **have NOT been physically tested by the author**.
+  - Other BDR Thermea appliances equipped with the **MK3 HMI / BLE module** or **GTW-IoT** (`EHC-04`, `EHC-05`, `EHC-07`, `EHC-09`, `EHC-14`, `EHC-16`, `CU-08` / `CU-GH08`, `CU-09`, `CU-16`, `CU-13`, `CU-OH02`, `CU-HW01`, `CU-EB`, `EEC-01 / SCB-*` across **De Dietrich**, **Baxi**, **Remeha**, **Brötje**, **Chappée**, and **Oertli**) use the same BLE GATT service and `obd_catalog.json` dictionary in the official service app, but **have NOT been physically tested by the author**.
 
 👉 See the **[Hardware Compatibility Table in the Documentation](https://d-lebed.github.io/esphome-bdr-ble/#compatibility)**.
 

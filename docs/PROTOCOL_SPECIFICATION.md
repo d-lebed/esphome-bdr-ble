@@ -301,7 +301,7 @@ To read multiple parameters in a single round-trip (up to ~1412–1518 bytes per
   - Permanent unsupported SDO abort codes (`0x06020000` Object does not exist, `0x06090011` Sub-index does not exist, `0x06010001` Write-only) mark the datapoint as `unsupported` (`Auto-Skip`).
   - `GetList`-incompatible SDO abort codes (`0x06040043`, `0x06070010`) switch that datapoint to individual `ReadRequest (0x00)` polling (`single_read_only`).
   - Transient CAN bus timeouts (`0x05040000`, `0x08000000`, `0x08000022`, `0x08000024`) keep the datapoint in the `GetList` batch for the next cycle.
-  - If `0x06010000` (`Unsupported access to object`) is returned on a secondary `node_id`, `bdr_ble` sends a per-node CAN channel upgrade (`02 00 00 02 04 00 <node_id> <auth_level>`); if returned on a previously working datapoint, `bdr_ble` automatically re-authenticates the 10-second `RUB v2.01` session.
+  - If `0x06010000` (`Unsupported access to object`) is returned on a secondary `node_id`, `bdr_ble` sends a per-node CAN channel upgrade (`02 00 00 02 04 00 <node_id> <auth_level>`); if returned on a previously working datapoint, `bdr_ble` automatically re-authenticates the `RUB v2.01` session.
 
 ---
 

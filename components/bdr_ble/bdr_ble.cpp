@@ -561,20 +561,6 @@ bool BdrBleComponent::send_node_channel_upgrade_(uint8_t node_id) {
   return this->send_direct_channel_(req, sizeof(req));
 }
 
-bool BdrBleComponent::send_rub_keepalive_() {
-  const uint8_t req[7] = {
-      0x02,
-      0x00,
-      0x00,
-      MSG_TYPE_RUB_AUTH,
-      RUB_FUNC_KEEPALIVE,
-      0x00,
-      0xFF,
-  };
-  ESP_LOGV(TAG, "Sending CAN-IP RUB session keep-alive (0x05)");
-  return this->send_direct_channel_(req, sizeof(req));
-}
-
 void BdrBleComponent::begin_subscribing_() {
   this->publish_status_("Subscribing to GATT notifications");
   this->state_ = STATE_SUBSCRIBING;
@@ -645,6 +631,8 @@ void BdrBleComponent::start_unlock_sequence_() {
 
 void BdrBleComponent::start_rub_auth_(const char *status_msg) {
   this->reset_active_transaction_();
+  this->active_group_idx_ = -1;
+  this->active_item_idx_ = 0;
   this->upgraded_nodes_mask_ = 0;
   this->pending_upgrade_nodes_mask_ = 0;
   this->publish_status_(status_msg);
@@ -997,17 +985,14 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     return;
   }
 
-  // RUB v2.01 Auth Ack (also used by CAN-IP v2.0 as ACK for Node Channel Upgrade 0x04 & Keep-Alive 0x05):
+  // RUB v2.01 Auth Ack (also used by CAN-IP v2.0 as ACK for Node Channel Upgrade 0x04):
   // 02 xx 00 02 03 xx <node_or_FF> <level> ...
   if (msg_type == MSG_TYPE_RUB_AUTH && func == RUB_FUNC_AUTH_ACK && len >= 8) {
     if (this->state_ == STATE_READY &&
-        (this->active_req_.kind == RequestKind::NODE_UPGRADE ||
-         this->active_req_.kind == RequestKind::KEEPALIVE)) {
-      if (this->active_req_.kind == RequestKind::NODE_UPGRADE) {
-        ESP_LOGI(TAG,
-                 "CAN-IP channel upgrade ACK for node 0x%02X (granted level=%u)",
-                 this->active_req_.node_id, payload[7]);
-      }
+        this->active_req_.kind == RequestKind::NODE_UPGRADE) {
+      ESP_LOGI(TAG,
+               "CAN-IP channel upgrade ACK for node 0x%02X (granted level=%u)",
+               this->active_req_.node_id, payload[7]);
       this->active_req_ = {};
       this->consecutive_timeouts_ = 0;
       return;
@@ -1052,11 +1037,9 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     return;
   }
 
-  // Per-Node Channel Upgrade ACK / Keep-Alive ACK
-  if (msg_type == MSG_TYPE_RUB_AUTH &&
-      (func == RUB_FUNC_CHANNEL_UPGRADE || func == RUB_FUNC_KEEPALIVE)) {
-    if (this->active_req_.kind == RequestKind::NODE_UPGRADE ||
-        this->active_req_.kind == RequestKind::KEEPALIVE) {
+  // Per-Node Channel Upgrade ACK
+  if (msg_type == MSG_TYPE_RUB_AUTH && func == RUB_FUNC_CHANNEL_UPGRADE) {
+    if (this->active_req_.kind == RequestKind::NODE_UPGRADE) {
       this->active_req_ = {};
       this->consecutive_timeouts_ = 0;
     }
@@ -1069,22 +1052,17 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
-    bool was_keepalive = false;
     if ((this->active_req_.kind == RequestKind::READ ||
-         this->active_req_.kind == RequestKind::SNAPSHOT ||
-         this->active_req_.kind == RequestKind::KEEPALIVE) &&
+         this->active_req_.kind == RequestKind::SNAPSHOT) &&
         this->active_req_.node_id == node_id &&
         this->active_req_.index == index &&
         this->active_req_.sub_index == sub_index) {
-      was_keepalive = (this->active_req_.kind == RequestKind::KEEPALIVE);
       this->active_req_ = {};
       this->consecutive_timeouts_ = 0;
     }
     this->stale_published_ = false;
-    if (!was_keepalive) {
-      this->handle_single_read_ack_(node_id, index, sub_index, payload + 10,
-                                    len - 10);
-    }
+    this->handle_single_read_ack_(node_id, index, sub_index, payload + 10,
+                                  len - 10);
     return;
   }
 
@@ -1095,19 +1073,16 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
     bool matched_req = false;
-    bool was_keepalive = false;
     if ((this->active_req_.kind == RequestKind::READ ||
-         this->active_req_.kind == RequestKind::SNAPSHOT ||
-         this->active_req_.kind == RequestKind::KEEPALIVE) &&
+         this->active_req_.kind == RequestKind::SNAPSHOT) &&
         this->active_req_.node_id == node_id &&
         this->active_req_.index == index &&
         this->active_req_.sub_index == sub_index) {
       matched_req = true;
-      was_keepalive = (this->active_req_.kind == RequestKind::KEEPALIVE);
       this->active_req_ = {};
       this->consecutive_timeouts_ = 0;
     }
-    if (!matched_req || was_keepalive) {
+    if (!matched_req) {
       return;
     }
 
@@ -1281,7 +1256,7 @@ void BdrBleComponent::handle_access_denied_(uint8_t node_id, uint16_t index,
   }
 
   // HIGH-05: 2) If this datapoint previously succeeded or is listed in 0x502B at <= auth_level_,
-  // the boiler's 10-second RUB auth session expired! Re-authenticate RUB instead of disabling it.
+  // the boiler's RUB auth session was reset! Re-authenticate RUB instead of disabling it.
   const auto *dp = this->registry_.find_datapoint(node_id, index, sub_index);
   bool known_accessible =
       (dp != nullptr) &&
@@ -1290,7 +1265,7 @@ void BdrBleComponent::handle_access_denied_(uint8_t node_id, uint16_t index,
   if (known_accessible && this->state_ == STATE_READY) {
     ESP_LOGW(TAG,
              "Datapoint 0x%04X:%02X returned Unsupported Access (0x06010000) after previously succeeding; "
-             "RUB session expired -> re-authenticating",
+             "RUB session reset -> re-authenticating",
              index, sub_index);
     this->registry_.trigger_immediate_repoll_for_node(node_id);
     this->start_rub_auth_("Re-authenticating CAN-BUS");
@@ -1383,6 +1358,12 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
         case SdoAbortCategory::AUTH_OR_ACCESS_DENIED:
           this->handle_access_denied_(node_id, index, sub_index, status,
                                       abort_code, true);
+          // If handle_access_denied_() triggered RUB re-authentication or queued a node upgrade,
+          // stop processing the remaining items in this batch so they are not downgraded to single_read_only.
+          if (this->state_ != STATE_READY ||
+              this->pending_upgrade_nodes_mask_ != 0) {
+            return;
+          }
           break;
 
         case SdoAbortCategory::GET_LIST_INCOMPATIBLE:
@@ -1581,15 +1562,6 @@ void BdrBleComponent::loop() {
       ActiveRequest timed_out = this->active_req_;
       this->reset_active_transaction_();
       this->cooldown_until_ms_ = now + POST_TIMEOUT_COOLDOWN_MS;
-
-      if (timed_out.kind == RequestKind::KEEPALIVE &&
-          !this->keepalive_use_sdo_fallback_) {
-        ESP_LOGD(TAG,
-                 "CAN-IP RUB keep-alive (0x05) not ACKed by gateway; falling back to 0x1000:00 SDO keep-alive");
-        this->keepalive_use_sdo_fallback_ = true;
-        return;
-      }
-
       this->consecutive_timeouts_++;
 
       if (this->consecutive_timeouts_ >= MAX_CONSECUTIVE_TIMEOUTS) {
@@ -1798,31 +1770,6 @@ void BdrBleComponent::loop() {
         }
       } else {
         this->active_group_idx_ = -1;
-      }
-    }
-
-    // Keep the boiler's 10-second RUB v2.01 CAN session timer alive when idle
-    if (this->active_group_idx_ < 0 &&
-        this->active_req_.kind == RequestKind::NONE && !channel_busy &&
-        (now - this->last_action_ms_ >= KEEPALIVE_INTERVAL_MS)) {
-      if (!this->keepalive_use_sdo_fallback_) {
-        if (this->send_rub_keepalive_()) {
-          this->active_req_.kind = RequestKind::KEEPALIVE;
-          this->active_req_.node_id = 0xFF;
-          this->active_req_.started_ms = now;
-          this->active_req_.last_activity_ms = now;
-        }
-      } else {
-        ESP_LOGV(TAG, "Sending RUB session keep-alive fallback (0x1000:00)");
-        if (this->send_read_param_(this->default_node_id_,
-                                   INDEX_CAN_DEVICE_TYPE, 0x00)) {
-          this->active_req_.kind = RequestKind::KEEPALIVE;
-          this->active_req_.node_id = this->default_node_id_;
-          this->active_req_.index = INDEX_CAN_DEVICE_TYPE;
-          this->active_req_.sub_index = 0x00;
-          this->active_req_.started_ms = now;
-          this->active_req_.last_activity_ms = now;
-        }
       }
     }
   }

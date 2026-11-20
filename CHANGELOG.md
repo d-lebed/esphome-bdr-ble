@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Chunked `BDR_SNAPSHOT` Logging & `log_snapshot` Option:**
-  - Added `log_snapshot: true/false` (default `true`) on the `bdr_ble:` hub. Snapshot log lines (`BDR_SNAPSHOT:...`) are now emitted at most 2 lines per `loop()` tick and logged once per boot, eliminating the `>300 ms` `ble_client` main-loop blocking warning on reconnect.
+  - Added `log_snapshot: true/false` (default `true`) on the `bdr_ble:` hub. Snapshot log lines (`BDR_SNAPSHOT:...`) are now emitted at most 2 lines per `loop()` tick on each BLE connection, eliminating the `>300 ms` `ble_client` main-loop blocking warning.
 - **Raw Unregistered Hex Datapoint Type Override (`type:`):**
   - Added optional `type:` (`U8`, `I8`, `U16`, `I16`, `U32`, `I32`, `Enum`, `VisibleString`, `OctetString`, `TimeOfDay`) on platform items to allow polling/testing newly discovered `BDR_SNAPSHOT` hex indices not yet present in `obd_catalog.json`.
 - **Multi-Node CAN Channel Authorization Upgrade (`FUNC = 0x04`):**
@@ -34,9 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed the hardcoded `0x30000000` `U32`/`I32` range heuristic in `decode_numeric_datapoint()` and replaced it with exact `0x502B` `dp_len` wire-length checking, hardware `[raw_min, raw_max]` range validation, and a single-cycle jump guard for `total_increasing` counters.
 - **Zero `REG_FOR_NOTIFY after services released` Warnings on Connect:**
   - Holds `ClientState::CONNECTED` during GATT discovery and drives notification registration and CCCD descriptor writes deterministically via `ESP_GATTC_REG_FOR_NOTIFY_EVT` and `ESP_GATTC_WRITE_DESCR_EVT` after link encryption before transitioning to `ClientState::ESTABLISHED`.
-- **Authoritative Write State Publishing & RUB Session Expiry Recovery:**
+- **Authoritative Write State Publishing & RUB Session Recovery:**
   - Removed optimistic `publish_state()` calls prior to write confirmation in `BdrBleNumber`, `BdrBleSelect`, and `BdrBleText`; writes can now be queued during initial connection/snapshot and publish state only upon authoritative hardware readback.
-  - Automatically re-authenticates the `RUB v2.01` session when a previously working datapoint returns `SDO_ABORT_UNSUPPORTED_ACCESS (0x06010000)` after a 10-second idle expiry instead of permanently disabling the datapoint.
+  - Automatically re-authenticates the `RUB v2.01` session when a previously working datapoint returns `SDO_ABORT_UNSUPPORTED_ACCESS (0x06010000)` instead of permanently disabling the datapoint.
 - **`GTW-IoT` Service 3 Skip, 2-Byte `Select` Writes, 6-Byte `TimeOfDay` & UTF-8 Safe Truncation:**
   - Skips Service 3 unlock immediately when Service 3 UUIDs are absent in GATT DB (e.g., `GTW-IoT`).
   - Serializes 1-byte or 2-byte Little-Endian enum payloads in `BdrBleSelect::control()` according to parameter wire size.

@@ -47,7 +47,8 @@ Die Komponente kommuniziert direkt mit der integrierten **MK3 / EHC-08 / CU-GH08
 ## Hardware-Kompatibilität (Getestet vs. Ungetestet)
 
 - **✅ Physisch getestet & verifiziert:**
-  - **De Dietrich Strateo R32** (`EHC-08`-Reglerplatine, BLE-Firmware `01.00`, RUB-Protokoll `02.01`) mit einem **ESP32-C6** (`esp-idf`).
+  - **De Dietrich Strateo R32** (`EHC-08`-Reglerplatine, integriertes BLE `01.00` mit 6-stelliger PIN, RUB-Protokoll `02.01`).
+  - **Remeha Elga Ace All-in-One** (`EHC-15` Hybrid-Wärmepumpe über externen **Remeha Home Hub `GTW-IoT`** im PIN-losen Modus).
 - **⚠️ Theoretische / ungetestete Kompatibilität (gemeinsame MK3 BLE / CAN-IP Plattform):**
   - Weitere BDR Thermea Geräte mit **MK3 HMI / BLE-Modul** (`EHC-04`, `EHC-05`, `EHC-07`, `EHC-09`, `EHC-14`, `CU-08` / `CU-GH08`, `CU-09`, `CU-16`, `CU-13`, `CU-OH02`, `CU-HW01`, `CU-EB`, `EEC-01 / SCB-*` der Marken **Brötje**, **Remeha**, **De Dietrich**, **Baxi**, **Oertli** und **Chappée**) nutzen denselben BLE-GATT-Service und dasselbe `obd_catalog.json`-Wörterbuch in der offiziellen Service-App, wurden jedoch **vom Autor NICHT physisch getestet**.
 
@@ -85,6 +86,7 @@ bdr_ble:
   pin: !secret strateo_ble_pin
   node_id: 1
   auth_level: 4
+  log_snapshot: true
 
 switch:
   - platform: ble_client

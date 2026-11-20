@@ -632,13 +632,11 @@
 
         <h3 data-i18n="compat_tested_title">✅ Physically Tested &amp; Verified Hardware</h3>
         <p data-i18n="compat_tested_intro">
-          This integration has been <strong>physically tested and verified ONLY on the following appliance</strong>:
+          This integration has been <strong>physically tested and verified on the following setups</strong>:
         </p>
         <ul data-i18n="compat_tested_list">
-          <li><strong>De Dietrich Strateo R32</strong> air-to-water split heat pump with integrated DHW tank and electric backup heater</li>
-          <li>Controller board: <strong><code>EHC-08</code></strong> (advertised BLE name <code>EHC-08_&lt;serial&gt;</code>, manufacturer data <code>"BDR"</code>)</li>
-          <li>BLE firmware: <code>01.00</code>, BLE protocol: <code>01.03</code>, RUB protocol: <code>02.01</code></li>
-          <li>ESPHome node: <strong>ESP32-C6</strong> (<code>esp32-c6-devkitm-1</code>, ESP-IDF framework)</li>
+          <li><strong>De Dietrich Strateo R32</strong> air-to-water split heat pump with integrated DHW tank and electric backup heater (controller board <strong><code>EHC-08</code></strong>, onboard BLE <code>01.00</code> with 6-digit PIN, RUB protocol <code>02.01</code>)</li>
+          <li><strong>Remeha Elga Ace All-in-One</strong> hybrid heat pump / gas condensing boiler (controller board <strong><code>EHC-15</code></strong>, connected via external <strong>Remeha Home Hub <code>GTW-IoT</code></strong> in PIN-less mode)</li>
         </ul>
 
         <h3 data-i18n="compat_untested_title">⚠️ Theoretical Compatibility (NOT Tested on Real Hardware)</h3>
@@ -753,9 +751,9 @@
           <li>Flash the ESP32 with <code>pin: !secret strateo_ble_pin</code> under <code>bdr_ble:</code>. Upon connecting, <code>bdr_ble</code> automatically bonds using your PIN, saves the LTK key in ESP32 NVS flash, and unlocks Service 3 + CAN-BUS <code>RUB v2.01</code>.</li>
         </ol>
 
-        <h3 data-i18n="reqs_gtwiot_title">Route B: External <code>GTW-IoT</code> Home Hub — Without PIN (Untested)</h3>
+        <h3 data-i18n="reqs_gtwiot_title">Route B: External <code>GTW-IoT</code> Home Hub — Without PIN</h3>
         <p data-i18n="reqs_gtwiot_desc">
-          Appliances using the external round <strong><code>GTW-IoT</code></strong> hub (advertising as <code>GTW-IOT_&lt;serial&gt;</code>, e.g., Remeha Confida 10) do not use BLE Passkey encryption. Simply <strong>omit the <code>pin:</code> option</strong> under <code>bdr_ble:</code> in your YAML, briefly press the button on the <code>GTW-IoT</code> hub to make it connectable, and <code>bdr_ble</code> will connect directly in plain BLE mode and perform the two-stage TEA unlock handshake <em>(note: implemented based on protocol specification, not physically tested by the author)</em>.
+          Appliances using the external round <strong><code>GTW-IoT</code></strong> hub (advertising as <code>GTW-IOT_&lt;serial&gt;</code>, e.g., Remeha Elga Ace All-in-One / Confida 10) do not use BLE Passkey encryption. Simply <strong>omit the <code>pin:</code> option</strong> under <code>bdr_ble:</code> in your YAML, briefly press the button on the <code>GTW-IoT</code> hub to put it into BLE discovery mode, and <code>bdr_ble</code> will connect directly in plain BLE mode and perform the RUB v2.01 TEA unlock handshake. <em>Note: by hardware design, when a BLE client disconnects from the <code>GTW-IoT</code> hub, the hub exits BLE discovery mode until its physical button is pressed again.</em>
         </p>
 
         <h3 data-i18n="reqs_gateway_rules_title">Dynamic GATT UUID Discovery &amp; Gateway Auto-Recovery</h3>
@@ -797,6 +795,7 @@ bdr_ble:
   pin: !secret strateo_ble_pin
   node_id: 1
   auth_level: 4
+  log_snapshot: true
 
 switch:
   - platform: ble_client
@@ -847,9 +846,10 @@ text_sensor:
         <pre><code>bdr_ble:
   id: boiler_hub
   ble_client_id: boiler_ble       # Required: ID of the ble_client entry
-  pin: !secret strateo_ble_pin    # Optional: 6-digit BLE pairing passkey (0..999999)
+  pin: !secret strateo_ble_pin    # Optional: 6-digit BLE pairing passkey (0..999999); omit for GTW-IoT
   node_id: 1                      # Optional: Default CANopen Node ID (default: 1 = main Control Unit)
-  auth_level: 3                   # Optional: TEA authorization level 1..4 (default: 4)</code></pre>
+  auth_level: 3                   # Optional: TEA authorization level 1..4 (default: 4)
+  log_snapshot: true              # Optional: Log BDR_SNAPSHOT lines on connect (default: true)</code></pre>
 
         <p data-i18n="cfg_auth_explain">
           <strong>How <code>auth_level</code> works in the boiler controller:</strong><br />

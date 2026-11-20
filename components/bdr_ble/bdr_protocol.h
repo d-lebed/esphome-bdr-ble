@@ -59,18 +59,15 @@ inline constexpr uint8_t RUB_FUNC_CHALLENGE_RESP = 0x01;
 inline constexpr uint8_t RUB_FUNC_AUTH_REQ = 0x02;
 inline constexpr uint8_t RUB_FUNC_AUTH_ACK = 0x03;
 inline constexpr uint8_t RUB_FUNC_CHANNEL_UPGRADE = 0x04;
-inline constexpr uint8_t RUB_FUNC_KEEPALIVE = 0x05;
 
 // Dynamic appliance menu descriptor table index (SubIndex 1..15)
-inline constexpr uint16_t INDEX_CAN_DEVICE_TYPE = 0x1000;
 inline constexpr uint16_t INDEX_AP_MENU_DESCRIPTOR = 0x502B;
 inline constexpr uint8_t SNAPSHOT_MAX_SUB_INDEX = 15;
 
-// Timeouts aligned with boiler's CAN SDO / GetList round-trip and 10000 ms RUB session timeout
+// Timeouts aligned with boiler's CAN SDO / GetList round-trip
 inline constexpr uint32_t HANDSHAKE_TIMEOUT_MS = 3000;
 inline constexpr uint32_t REQUEST_TIMEOUT_MS = 4000;
 inline constexpr uint32_t POST_TIMEOUT_COOLDOWN_MS = 500;
-inline constexpr uint32_t KEEPALIVE_INTERVAL_MS = 5000;
 inline constexpr uint32_t AUTH_COOLDOWN_MS = 30000;
 inline constexpr uint32_t PAIRING_TIMEOUT_MS = 30000;
 inline constexpr uint32_t DISCONNECT_STALE_TIMEOUT_MS = 90000;

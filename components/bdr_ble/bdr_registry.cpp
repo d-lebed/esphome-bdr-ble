@@ -244,6 +244,29 @@ void BdrDatapointRegistry::reset_poll_timers() {
   }
 }
 
+uint32_t BdrDatapointRegistry::get_configured_nodes_mask() const {
+  uint32_t mask = 0;
+  for (const auto &grp : this->poll_groups_) {
+    for (const auto &dp : grp.items) {
+      if (dp.node_id < 32) {
+        mask |= (1UL << dp.node_id);
+      }
+    }
+  }
+  return mask;
+}
+
+void BdrDatapointRegistry::trigger_immediate_repoll_for_node(uint8_t node_id) {
+  for (auto &grp : this->poll_groups_) {
+    for (const auto &dp : grp.items) {
+      if (dp.node_id == node_id && !dp.unsupported) {
+        grp.last_cycle_start_ms = 0;
+        break;
+      }
+    }
+  }
+}
+
 uint8_t BdrDatapointRegistry::get_discovered_level(uint16_t index,
                                                    uint8_t sub_index) const {
   uint32_t packed_key = (static_cast<uint32_t>(index) << 8) | sub_index;
@@ -485,12 +508,22 @@ void BdrDatapointRegistry::dispatch_datapoint_value(uint8_t node_id,
     return;
   }
 
-  // CRITICAL-02: Validate exact hardware wire length from 0x502B before decoding ANY datapoint
-  if (dp->expected_len > 0 && data_len != dp->expected_len) {
-    ESP_LOGW(TAG,
-             "Rejecting 0x%04X:%02X payload with mismatched length %zu (expected %u from 0x502B)",
-             index, sub_index, data_len, dp->expected_len);
-    return;
+  // CRITICAL-02: Validate hardware wire length from 0x502B before decoding.
+  // Fixed-width numeric/enum/TimeOfDay types must match expected_len exactly;
+  // variable-length VisibleString/OctetString responses may be shorter if null-terminated,
+  // so only reject if data_len exceeds expected_len.
+  if (dp->expected_len > 0) {
+    bool is_variable_len = (dp->data_type == BDR_TYPE_VISIBLE_STRING ||
+                            dp->data_type == BDR_TYPE_OCTET_STRING);
+    bool len_invalid = is_variable_len ? (data_len > dp->expected_len)
+                                       : (data_len != dp->expected_len);
+    if (len_invalid) {
+      ESP_LOGW(TAG,
+               "Rejecting 0x%04X:%02X payload with invalid length %zu (expected %s%u from 0x502B)",
+               index, sub_index, data_len, is_variable_len ? "<=" : "",
+               dp->expected_len);
+      return;
+    }
   }
 
   float numeric_val = 0.0f;

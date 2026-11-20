@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Serializes 1-byte or 2-byte Little-Endian enum payloads in `BdrBleSelect::control()` according to parameter wire size.
   - Decodes 6-byte CANopen CiA 301 `TIME_OF_DAY` (`ms_since_midnight` + `days_since_1984`) for `TimeOfDay` parameters (`0x3421..0x3423`).
   - Truncates `BdrBleText` writes on valid UTF-8 codepoint boundaries (`utf8_safe_truncate_len`) and fixes `NameError` in `obd.py:resolve_parameter()` on unknown hex indices.
+  - Marked `parZoneFriendlyNameShort` (`0x3410`) as read-only (`"rw": false`) in `obd_catalog.json` and `docs/configurator.html` (with a backward-compatible warning in `text:`) since `EHC-08` treats `0x3410` as a read-only hardware terminal identifier (`CIRCA`/`CIRCB`).
 
 ---
 

@@ -60,7 +60,7 @@ void BdrBleComponent::reset_session_state_(bool clear_writes) {
   this->consecutive_timeouts_ = 0;
   this->cooldown_until_ms_ = 0;
   this->upgraded_nodes_mask_ = 0;
-  this->pending_upgrade_node_ = -1;
+  this->pending_upgrade_nodes_mask_ = 0;
   if (clear_writes) {
     this->write_queue_.clear();
   }
@@ -561,6 +561,20 @@ bool BdrBleComponent::send_node_channel_upgrade_(uint8_t node_id) {
   return this->send_direct_channel_(req, sizeof(req));
 }
 
+bool BdrBleComponent::send_rub_keepalive_() {
+  const uint8_t req[7] = {
+      0x02,
+      0x00,
+      0x00,
+      MSG_TYPE_RUB_AUTH,
+      RUB_FUNC_KEEPALIVE,
+      0x00,
+      0xFF,
+  };
+  ESP_LOGV(TAG, "Sending CAN-IP RUB session keep-alive (0x05)");
+  return this->send_direct_channel_(req, sizeof(req));
+}
+
 void BdrBleComponent::begin_subscribing_() {
   this->publish_status_("Subscribing to GATT notifications");
   this->state_ = STATE_SUBSCRIBING;
@@ -632,7 +646,7 @@ void BdrBleComponent::start_unlock_sequence_() {
 void BdrBleComponent::start_rub_auth_(const char *status_msg) {
   this->reset_active_transaction_();
   this->upgraded_nodes_mask_ = 0;
-  this->pending_upgrade_node_ = -1;
+  this->pending_upgrade_nodes_mask_ = 0;
   this->publish_status_(status_msg);
   this->state_ = STATE_RUB_WAIT_CHALLENGE;
   this->retry_count_ = 0;
@@ -982,8 +996,21 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     return;
   }
 
-  // RUB v2.01 Auth Ack: 02 01 00 02 03 03 FF <level> ...
+  // RUB v2.01 Auth Ack (also used by CAN-IP v2.0 as ACK for Node Channel Upgrade 0x04 & Keep-Alive 0x05):
+  // 02 xx 00 02 03 xx <node_or_FF> <level> ...
   if (msg_type == MSG_TYPE_RUB_AUTH && func == RUB_FUNC_AUTH_ACK && len >= 8) {
+    if (this->state_ == STATE_READY &&
+        (this->active_req_.kind == RequestKind::NODE_UPGRADE ||
+         this->active_req_.kind == RequestKind::KEEPALIVE)) {
+      if (this->active_req_.kind == RequestKind::NODE_UPGRADE) {
+        ESP_LOGI(TAG,
+                 "CAN-IP channel upgrade ACK for node 0x%02X (granted level=%u)",
+                 this->active_req_.node_id, payload[7]);
+      }
+      this->active_req_ = {};
+      this->consecutive_timeouts_ = 0;
+      return;
+    }
     if (this->state_ != STATE_RUB_WAIT_AUTH_ACK &&
         this->state_ != STATE_RUB_WAIT_CHALLENGE) {
       return;
@@ -994,6 +1021,12 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
       this->reset_active_transaction_();
       this->consecutive_timeouts_ = 0;
       this->mark_node_upgraded_(this->default_node_id_);
+      // HIGH-05: Proactively schedule channel upgrades for any configured secondary CAN nodes
+      if (this->auth_level_ >= 3) {
+        this->pending_upgrade_nodes_mask_ =
+            this->registry_.get_configured_nodes_mask() &
+            ~(1UL << this->default_node_id_);
+      }
       this->stale_published_ = false;
       this->last_action_ms_ = millis();
 
@@ -1236,10 +1269,12 @@ void BdrBleComponent::handle_access_denied_(uint8_t node_id, uint16_t index,
   // HIGH-05: 1) Check if a secondary CAN node channel needs authorization upgrade (FUNC 0x04)
   if (node_id != this->default_node_id_ && !this->is_node_upgraded_(node_id) &&
       this->auth_level_ >= 3) {
-    this->pending_upgrade_node_ = node_id;
+    this->queue_node_upgrade_(node_id);
+    this->registry_.trigger_immediate_repoll_for_node(node_id);
+    this->active_group_idx_ = -1;
     ESP_LOGI(TAG,
              "Node 0x%02X returned Unsupported Access (0x06010000) on 0x%04X:%02X; "
-             "queuing CAN channel upgrade",
+             "queuing CAN channel upgrade and immediate re-poll",
              node_id, index, sub_index);
     return;
   }
@@ -1256,6 +1291,7 @@ void BdrBleComponent::handle_access_denied_(uint8_t node_id, uint16_t index,
              "Datapoint 0x%04X:%02X returned Unsupported Access (0x06010000) after previously succeeding; "
              "RUB session expired -> re-authenticating",
              index, sub_index);
+    this->registry_.trigger_immediate_repoll_for_node(node_id);
     this->start_rub_auth_("Re-authenticating CAN-BUS");
     return;
   }
@@ -1286,54 +1322,96 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
     uint16_t data_len = (static_cast<uint16_t>(payload[offset + 6]) << 8) |
                         payload[offset + 7];
     offset += 8;
-    if (offset + data_len > len) {
-      break;
-    }
+
     if (status == 0x01) {
+      if (offset + data_len > len) {
+        break;
+      }
       this->registry_.dispatch_datapoint_value(node_id, index, sub_index,
                                                payload + offset, data_len);
-    } else {
-      uint32_t abort_code = 0;
-      if (data_len >= 4) {
-        abort_code = static_cast<uint32_t>(payload[offset + 0]) |
-                     (static_cast<uint32_t>(payload[offset + 1]) << 8) |
-                     (static_cast<uint32_t>(payload[offset + 2]) << 16) |
-                     (static_cast<uint32_t>(payload[offset + 3]) << 24);
-      }
-      // CRITICAL-01: Classify SDO abort code instead of unconditionally poisoning single_read_only
-      if (abort_code == 0) {
-        this->registry_.mark_datapoint_single_read_only(
-            node_id, index, sub_index, status, abort_code);
-      } else {
-        SdoAbortCategory cat = classify_sdo_abort(abort_code);
-        switch (cat) {
-          case SdoAbortCategory::PERMANENT_UNSUPPORTED:
-            this->registry_.mark_datapoint_unsupported(
-                node_id, index, sub_index, status, abort_code);
-            break;
+      offset += data_len;
+      continue;
+    }
 
-          case SdoAbortCategory::AUTH_OR_ACCESS_DENIED:
-            this->handle_access_denied_(node_id, index, sub_index, status,
-                                        abort_code, true);
-            break;
-
-          case SdoAbortCategory::GET_LIST_INCOMPATIBLE:
-            this->registry_.mark_datapoint_single_read_only(
-                node_id, index, sub_index, status, abort_code);
-            break;
-
-          case SdoAbortCategory::TRANSIENT_ERROR:
-            ESP_LOGW(TAG,
-                     "Transient SDO abort in GetList for 0x%04X:%02X (status=0x%02X, abort=0x%08X: %s); "
-                     "keeping in batch for next cycle",
-                     index, sub_index, status,
-                     static_cast<unsigned>(abort_code),
-                     sdo_abort_code_str(abort_code));
-            break;
+    // CRITICAL-01: On status != 0x01 (e.g. NegAck 0x02), CAN-IP v2.0 specifies a 4-byte LE SDO abort code,
+    // though some gateway firmware revisions set lenHi:lenLo to 0 or the nominal object size.
+    // Determine the actual byte stride by checking whether 4 abort bytes align with packet end / next item.
+    size_t step_len = data_len;
+    bool has_abort_bytes = (data_len >= 4 && offset + 4 <= len);
+    if (data_len != 4 && offset + 4 <= len) {
+      if (i + 1 == count && offset + 4 == len) {
+        step_len = 4;
+        has_abort_bytes = true;
+      } else if (i + 1 < count && offset + 4 + 8 <= len) {
+        const uint8_t *next4 = payload + offset + 4;
+        uint16_t next4_idx =
+            (static_cast<uint16_t>(next4[2]) << 8) | next4[3];
+        bool next4_valid =
+            (next4[0] == 0x01 || next4[0] == 0x02) && next4[5] == 0x00 &&
+            (this->registry_.find_datapoint(next4[1], next4_idx, next4[4]) !=
+             nullptr);
+        if (next4_valid) {
+          step_len = 4;
+          has_abort_bytes = true;
         }
       }
     }
-    offset += data_len;
+    if (offset + step_len > len) {
+      break;
+    }
+
+    uint32_t abort_code = 0;
+    if (has_abort_bytes) {
+      abort_code = static_cast<uint32_t>(payload[offset + 0]) |
+                   (static_cast<uint32_t>(payload[offset + 1]) << 8) |
+                   (static_cast<uint32_t>(payload[offset + 2]) << 16) |
+                   (static_cast<uint32_t>(payload[offset + 3]) << 24);
+    }
+
+    if (abort_code == 0) {
+      this->registry_.mark_datapoint_single_read_only(
+          node_id, index, sub_index, status, abort_code);
+    } else {
+      SdoAbortCategory cat = classify_sdo_abort(abort_code);
+      switch (cat) {
+        case SdoAbortCategory::PERMANENT_UNSUPPORTED:
+          this->registry_.mark_datapoint_unsupported(
+              node_id, index, sub_index, status, abort_code);
+          break;
+
+        case SdoAbortCategory::AUTH_OR_ACCESS_DENIED:
+          this->handle_access_denied_(node_id, index, sub_index, status,
+                                      abort_code, true);
+          break;
+
+        case SdoAbortCategory::GET_LIST_INCOMPATIBLE:
+          this->registry_.mark_datapoint_single_read_only(
+              node_id, index, sub_index, status, abort_code);
+          break;
+
+        case SdoAbortCategory::TRANSIENT_ERROR:
+          ESP_LOGW(TAG,
+                   "Transient SDO abort in GetList for 0x%04X:%02X (status=0x%02X, abort=0x%08X: %s); "
+                   "keeping in batch for next cycle",
+                   index, sub_index, status,
+                   static_cast<unsigned>(abort_code),
+                   sdo_abort_code_str(abort_code));
+          break;
+      }
+    }
+
+    offset += step_len;
+    // Guard against misaligned continuation if next header does not look like a valid item header
+    if (i + 1 < count && offset + 8 <= len) {
+      uint8_t next_status = payload[offset + 0];
+      if ((next_status != 0x01 && next_status != 0x02) ||
+          payload[offset + 5] != 0x00) {
+        ESP_LOGW(TAG,
+                 "GetListResponse alignment lost after NegAck on 0x%04X:%02X; stopping batch parse",
+                 index, sub_index);
+        break;
+      }
+    }
   }
 }
 
@@ -1504,6 +1582,15 @@ void BdrBleComponent::loop() {
       ActiveRequest timed_out = this->active_req_;
       this->reset_active_transaction_();
       this->cooldown_until_ms_ = now + POST_TIMEOUT_COOLDOWN_MS;
+
+      if (timed_out.kind == RequestKind::KEEPALIVE &&
+          !this->keepalive_use_sdo_fallback_) {
+        ESP_LOGD(TAG,
+                 "CAN-IP RUB keep-alive (0x05) not ACKed by gateway; falling back to 0x1000:00 SDO keep-alive");
+        this->keepalive_use_sdo_fallback_ = true;
+        return;
+      }
+
       this->consecutive_timeouts_++;
 
       if (this->consecutive_timeouts_ >= MAX_CONSECUTIVE_TIMEOUTS) {
@@ -1554,12 +1641,18 @@ void BdrBleComponent::loop() {
     }
     this->cooldown_until_ms_ = 0;
 
-    // Priority 0: Execute pending secondary-node CAN channel upgrade (HIGH-05)
-    if (this->pending_upgrade_node_ >= 0 &&
+    // Priority 0: Execute pending secondary-node CAN channel upgrades (HIGH-05)
+    if (this->pending_upgrade_nodes_mask_ != 0 &&
         this->active_req_.kind == RequestKind::NONE && !channel_busy &&
         (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
-      uint8_t upgrade_node = static_cast<uint8_t>(this->pending_upgrade_node_);
-      this->pending_upgrade_node_ = -1;
+      uint8_t upgrade_node = 0;
+      for (uint8_t n = 0; n < 32; n++) {
+        if ((this->pending_upgrade_nodes_mask_ & (1UL << n)) != 0) {
+          upgrade_node = n;
+          this->pending_upgrade_nodes_mask_ &= ~(1UL << n);
+          break;
+        }
+      }
       this->mark_node_upgraded_(upgrade_node);
       if (this->send_node_channel_upgrade_(upgrade_node)) {
         this->active_req_.kind = RequestKind::NODE_UPGRADE;
@@ -1713,15 +1806,24 @@ void BdrBleComponent::loop() {
     if (this->active_group_idx_ < 0 &&
         this->active_req_.kind == RequestKind::NONE && !channel_busy &&
         (now - this->last_action_ms_ >= KEEPALIVE_INTERVAL_MS)) {
-      ESP_LOGV(TAG, "Sending RUB session keep-alive (0x1000:00)");
-      if (this->send_read_param_(this->default_node_id_, INDEX_CAN_DEVICE_TYPE,
-                                 0x00)) {
-        this->active_req_.kind = RequestKind::KEEPALIVE;
-        this->active_req_.node_id = this->default_node_id_;
-        this->active_req_.index = INDEX_CAN_DEVICE_TYPE;
-        this->active_req_.sub_index = 0x00;
-        this->active_req_.started_ms = now;
-        this->active_req_.last_activity_ms = now;
+      if (!this->keepalive_use_sdo_fallback_) {
+        if (this->send_rub_keepalive_()) {
+          this->active_req_.kind = RequestKind::KEEPALIVE;
+          this->active_req_.node_id = 0xFF;
+          this->active_req_.started_ms = now;
+          this->active_req_.last_activity_ms = now;
+        }
+      } else {
+        ESP_LOGV(TAG, "Sending RUB session keep-alive fallback (0x1000:00)");
+        if (this->send_read_param_(this->default_node_id_,
+                                   INDEX_CAN_DEVICE_TYPE, 0x00)) {
+          this->active_req_.kind = RequestKind::KEEPALIVE;
+          this->active_req_.node_id = this->default_node_id_;
+          this->active_req_.index = INDEX_CAN_DEVICE_TYPE;
+          this->active_req_.sub_index = 0x00;
+          this->active_req_.started_ms = now;
+          this->active_req_.last_activity_ms = now;
+        }
       }
     }
   }

@@ -1005,7 +1005,7 @@ text_sensor:
 
         <h3 data-i18n="cfg_text_title">7. Writable String Parameters (<code>text</code>)</h3>
         <p data-i18n="cfg_text_desc">
-          Supports reading and editing writable <code>VisibleString</code> parameters (such as zone friendly names <code>parZoneFriendlyName</code>, short zone names <code>parZoneFriendlyNameShort</code>, user activity names <code>parZoneFriendlyNameUserActivity</code>, and installer details <code>AP089</code> / <code>AP090</code>) with automatic character length limits from <code>obd_catalog.json</code>.
+          Supports reading and editing writable <code>VisibleString</code> parameters (such as zone friendly names <code>parZoneFriendlyName</code>, user activity names <code>parZoneFriendlyNameUserActivity</code>, appliance name <code>parApApplianceName</code>, and installer details <code>AP089</code> / <code>AP090</code>) with automatic character length limits from <code>obd_catalog.json</code>. (Note: <code>parZoneFriendlyNameShort</code> / <code>0x3410</code> is a read-only hardware terminal label such as <code>CIRCA</code> and should be polled via <code>text_sensor</code>.)
         </p>
         <pre><code>text:
   - platform: bdr_ble
@@ -1013,8 +1013,6 @@ text_sensor:
     texts:
       - parameter: parZoneFriendlyName
         name: "Zone 1 Friendly Name"
-      - parameter: parZoneFriendlyNameShort
-        name: "Zone 1 Short Name"
       - parameter: parZoneFriendlyNameUserActivity
         sub_index: 1
         name: "Activity 1 Name"</code></pre>

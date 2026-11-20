@@ -189,6 +189,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   bool send_get_list_batch_(const PollGroup &grp, const size_t *item_indices,
                             size_t count, bool use_v200_header);
   bool send_node_channel_upgrade_(uint8_t node_id);
+  bool send_rub_keepalive_();
 
   void handle_notify_(uint16_t handle, const uint8_t *data, uint16_t len);
   void handle_direct_segment_(const uint8_t *data, uint16_t len);
@@ -205,6 +206,11 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void mark_node_upgraded_(uint8_t node_id) {
     if (node_id < 32) {
       this->upgraded_nodes_mask_ |= (1UL << node_id);
+    }
+  }
+  void queue_node_upgrade_(uint8_t node_id) {
+    if (node_id < 32) {
+      this->pending_upgrade_nodes_mask_ |= (1UL << node_id);
     }
   }
 
@@ -255,9 +261,10 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   size_t active_item_idx_{0};
   uint8_t get_list_stage_{0};  // 0=try 02 00..00 (v2.00), 1=try 02 01..03 (v2.01), 2=confirmed, 3=fallback to single 0x00
   bool get_list_use_v200_{true};
+  bool keepalive_use_sdo_fallback_{false};
   uint16_t negotiated_mtu_{23};
   uint32_t upgraded_nodes_mask_{0};
-  int16_t pending_upgrade_node_{-1};
+  uint32_t pending_upgrade_nodes_mask_{0};
 
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *status_text_{nullptr};

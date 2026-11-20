@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import esphome.codegen as cg
@@ -37,6 +38,7 @@ from ..schema_helpers import (
 )
 
 DEPENDENCIES = ["bdr_ble"]
+_LOGGER = logging.getLogger(__name__)
 
 CONF_TEXTS = "texts"
 
@@ -58,10 +60,18 @@ def _preprocess_text_item(value: Any) -> dict[str, Any]:
             f"Use 'number:' for numeric parameters or 'select:' for Enum parameters instead of 'text:'."
         )
     if not dp.get("rw", False):
-        raise cv.Invalid(
-            f"OBD string datapoint '{cfg[CONF_PARAMETER]}' ({dp['name']}) is read-only ({dp.get('cls', 'Signal')}). "
-            f"Use 'text_sensor:' instead of 'text:'."
-        )
+        if dp["index"] == 0x3410:
+            _LOGGER.warning(
+                "OBD parameter '%s' (0x3410 / parZoneFriendlyNameShort) is a hardware terminal "
+                "identifier (CIRCA/CIRCB) that rejects writes on EHC-08 controllers. "
+                "Consider moving it to 'text_sensor:' instead of 'text:'.",
+                cfg[CONF_PARAMETER],
+            )
+        else:
+            raise cv.Invalid(
+                f"OBD string datapoint '{cfg[CONF_PARAMETER]}' ({dp['name']}) is read-only ({dp.get('cls', 'Signal')}). "
+                f"Use 'text_sensor:' instead of 'text:'."
+            )
 
     meta = infer_sensor_metadata(dp)
     apply_default_name(cfg, meta["default_name"])

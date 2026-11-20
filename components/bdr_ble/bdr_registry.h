@@ -115,6 +115,12 @@ class BdrDatapointRegistry {
   /// Reset poll cycle timestamps when entering STATE_READY
   void reset_poll_timers();
 
+  /// Return bitmask of all configured node_ids (< 32) across poll groups
+  uint32_t get_configured_nodes_mask() const;
+
+  /// Reset last_cycle_start_ms = 0 for any group containing `node_id` so it is re-polled immediately
+  void trigger_immediate_repoll_for_node(uint8_t node_id);
+
   /// Parse a 0x502B:01..15 menu descriptor response for `node_id`
   void handle_snapshot_descriptor(uint8_t node_id, uint8_t sub_index,
                                   const uint8_t *data, size_t data_len);

@@ -19,6 +19,31 @@ inline const char *entity_log_name(const T *e, long) {
   return e->get_name().c_str();
 }
 
+#ifdef USE_SELECT
+inline const char *select_option_c_str(const char *s) { return s; }
+inline const char *select_option_c_str(const std::string &s) { return s.c_str(); }
+
+template <typename TraitsT>
+void apply_dynamic_select_options(TraitsT &traits,
+                                  const std::vector<const char *> &opts) {
+  if constexpr (requires { traits.set_options(FixedVector<const char *>{}); }) {
+    FixedVector<const char *> fv;
+    fv.init(opts.size());
+    for (const char *s : opts) {
+      fv.push_back(s);
+    }
+    traits.set_options(fv);
+  } else if constexpr (requires { traits.set_options(std::vector<std::string>{}); }) {
+    std::vector<std::string> sv;
+    sv.reserve(opts.size());
+    for (const char *s : opts) {
+      sv.emplace_back(s);
+    }
+    traits.set_options(sv);
+  }
+}
+#endif
+
 bool extract_raw_int64(BdrDataType data_type, const uint8_t *data,
                        size_t data_len, int64_t &out_raw) {
   switch (data_type) {
@@ -225,6 +250,25 @@ uint8_t BdrDatapointRegistry::get_datapoint_wire_size(
   return 1;
 }
 
+bool BdrDatapointRegistry::check_datapoint_bounds(uint8_t node_id,
+                                                  uint16_t index,
+                                                  uint8_t sub_index,
+                                                  uint32_t raw_val,
+                                                  uint32_t &out_min,
+                                                  uint32_t &out_max) const {
+  out_min = 0;
+  out_max = 0;
+  const auto *dp = this->find_datapoint(node_id, index, sub_index);
+  if (dp == nullptr || !dp->has_descriptor_bounds ||
+      dp->raw_min == 0xFFFFFFFFUL || dp->raw_max == 0xFFFFFFFFUL ||
+      dp->raw_min >= dp->raw_max) {
+    return true;
+  }
+  out_min = dp->raw_min;
+  out_max = dp->raw_max;
+  return raw_val >= dp->raw_min && raw_val <= dp->raw_max;
+}
+
 void BdrDatapointRegistry::on_connect() {
   this->discovered_datapoints_.clear();
   this->snapshot_logging_active_ = false;
@@ -242,18 +286,6 @@ void BdrDatapointRegistry::reset_poll_timers() {
   for (auto &grp : this->poll_groups_) {
     grp.last_cycle_start_ms = 0;
   }
-}
-
-uint32_t BdrDatapointRegistry::get_configured_nodes_mask() const {
-  uint32_t mask = 0;
-  for (const auto &grp : this->poll_groups_) {
-    for (const auto &dp : grp.items) {
-      if (dp.node_id < 32) {
-        mask |= (1UL << dp.node_id);
-      }
-    }
-  }
-  return mask;
 }
 
 void BdrDatapointRegistry::trigger_immediate_repoll_for_node(uint8_t node_id) {
@@ -325,9 +357,9 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
         bool is_signed = (dp->data_type == BDR_TYPE_I8 ||
                           dp->data_type == BDR_TYPE_I16 ||
                           dp->data_type == BDR_TYPE_I32);
-        bool valid_range = is_signed ? (static_cast<int32_t>(raw_min_u) <=
+        bool valid_range = is_signed ? (static_cast<int32_t>(raw_min_u) <
                                         static_cast<int32_t>(raw_max_u))
-                                     : (raw_min_u <= raw_max_u);
+                                     : (raw_min_u < raw_max_u);
         if (valid_range) {
           dp->has_descriptor_bounds = true;
           dp->raw_min = raw_min_u;
@@ -355,6 +387,67 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
               ESP_LOGI(TAG,
                        "Updated limits for 0x%04X:%02X from 0x502B: min=%.2f max=%.2f",
                        dp_idx, dp_sub, min_f, max_f);
+            }
+          }
+#endif
+#ifdef USE_SELECT
+          if (!dp->selects.empty() && dp->enum_table != nullptr &&
+              dp->enum_table_len > 0) {
+            std::vector<const char *> filtered;
+            filtered.reserve(dp->enum_table_len);
+            for (size_t i = 0; i < dp->enum_table_len; i++) {
+              const auto &entry = dp->enum_table[i];
+              if (entry.label == nullptr || entry.value < raw_min_u ||
+                  entry.value > raw_max_u) {
+                continue;
+              }
+              bool dup = false;
+              for (const char *existing : filtered) {
+                if (std::strcmp(existing, entry.label) == 0) {
+                  dup = true;
+                  break;
+                }
+              }
+              if (!dup) {
+                filtered.push_back(entry.label);
+              }
+            }
+            if (!filtered.empty()) {
+              bool updated_any = false;
+              for (auto *sel : dp->selects) {
+                const auto &cur = sel->traits.get_options();
+                bool same = (cur.size() == filtered.size());
+                if (same) {
+                  for (size_t i = 0; i < filtered.size(); i++) {
+                    if (std::strcmp(select_option_c_str(cur[i]), filtered[i]) != 0) {
+                      same = false;
+                      break;
+                    }
+                  }
+                }
+                if (!same) {
+                  std::string prev_label;
+                  bool had_prev = false;
+                  if (auto idx = sel->active_index();
+                      idx.has_value() && *idx < cur.size()) {
+                    prev_label = select_option_c_str(cur[*idx]);
+                    had_prev = true;
+                  }
+                  apply_dynamic_select_options(sel->traits, filtered);
+                  if (had_prev) {
+                    sel->publish_state(prev_label);
+                  }
+                  updated_any = true;
+                }
+              }
+              if (updated_any) {
+                ESP_LOGI(
+                    TAG,
+                    "Updated select options for 0x%04X:%02X from 0x502B: %zu options (range %u..%u)",
+                    dp_idx, dp_sub, filtered.size(),
+                    static_cast<unsigned>(raw_min_u),
+                    static_cast<unsigned>(raw_max_u));
+              }
             }
           }
 #endif

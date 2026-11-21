@@ -59,8 +59,8 @@ void BdrBleComponent::reset_session_state_(bool clear_writes) {
   this->retry_count_ = 0;
   this->consecutive_timeouts_ = 0;
   this->cooldown_until_ms_ = 0;
-  this->upgraded_nodes_mask_ = 0;
-  this->pending_upgrade_nodes_mask_ = 0;
+  this->pending_readback_ = {};
+  this->pending_rub_auth_tx_ = false;
   if (clear_writes) {
     this->write_queue_.clear();
   }
@@ -518,17 +518,17 @@ bool BdrBleComponent::send_write_param_(uint8_t node_id, uint16_t index,
 
 bool BdrBleComponent::send_get_list_batch_(const PollGroup &grp,
                                            const size_t *item_indices,
-                                           size_t count, bool use_v200_header) {
+                                           size_t count) {
   if (item_indices == nullptr || count == 0 || count > GET_LIST_MAX_ITEMS) {
     return false;
   }
   uint8_t req[7 + GET_LIST_MAX_ITEMS * 5];
   req[0] = 0x02;
-  req[1] = use_v200_header ? 0x00 : 0x01;
+  req[1] = 0x00;
   req[2] = 0x00;
   req[3] = MSG_TYPE_SDO;
   req[4] = FUNC_GET_LIST_REQ;
-  req[5] = use_v200_header ? 0x00 : 0x03;
+  req[5] = 0x00;
   req[6] = static_cast<uint8_t>(count);
 
   for (size_t i = 0; i < count; i++) {
@@ -540,25 +540,8 @@ bool BdrBleComponent::send_get_list_batch_(const PollGroup &grp,
     req[off + 3] = static_cast<uint8_t>(dp.index & 0xFF);
     req[off + 4] = dp.sub_index;
   }
-  ESP_LOGI(TAG, "Sending GetListRequest (%s, %zu items)",
-           use_v200_header ? "v2.00" : "v2.01", count);
+  ESP_LOGI(TAG, "Sending GetListRequest (v2.00, %zu items)", count);
   return this->send_direct_channel_(req, 7 + count * 5);
-}
-
-bool BdrBleComponent::send_node_channel_upgrade_(uint8_t node_id) {
-  const uint8_t req[8] = {
-      0x02,
-      0x00,
-      0x00,
-      MSG_TYPE_RUB_AUTH,
-      RUB_FUNC_CHANNEL_UPGRADE,
-      0x00,
-      node_id,
-      this->auth_level_,
-  };
-  ESP_LOGI(TAG, "Sending CAN-IP channel authorization upgrade for node 0x%02X (level=%u)",
-           node_id, this->auth_level_);
-  return this->send_direct_channel_(req, sizeof(req));
 }
 
 void BdrBleComponent::begin_subscribing_() {
@@ -633,8 +616,11 @@ void BdrBleComponent::start_rub_auth_(const char *status_msg) {
   this->reset_active_transaction_();
   this->active_group_idx_ = -1;
   this->active_item_idx_ = 0;
-  this->upgraded_nodes_mask_ = 0;
-  this->pending_upgrade_nodes_mask_ = 0;
+  this->pending_readback_ = {};
+  this->pending_rub_auth_tx_ = false;
+  if (this->get_list_stage_ != 2) {
+    this->get_list_stage_ = 0;
+  }
   this->publish_status_(status_msg);
   this->state_ = STATE_RUB_WAIT_CHALLENGE;
   this->retry_count_ = 0;
@@ -671,7 +657,6 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->h_svc3_ack_ = this->has_pin_ ? HANDLE_SVC3_ACK : 0;
         this->h_svc3_ack_cccd_ = this->has_pin_ ? HANDLE_SVC3_ACK_CCCD : 0;
         this->get_list_stage_ = 0;
-        this->get_list_use_v200_ = true;
         this->snapshot_sub_idx_ = 1;
         this->negotiated_mtu_ = 23;
         this->reset_session_state_(false);
@@ -748,7 +733,15 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
     case ESP_GATTC_WRITE_DESCR_EVT:
       if (this->state_ == STATE_SUBSCRIBING &&
           (this->cccd_substate_ == CCCD_WAIT_WRITE_DESCR ||
-           this->cccd_substate_ == CCCD_WAIT_REG_NOTIFY)) {
+           this->cccd_substate_ == CCCD_WAIT_REG_NOTIFY) &&
+          this->cccd_step_ < 5) {
+        const uint16_t cccd_handles[5] = {
+            this->h_svc3_chal_cccd_, this->h_svc3_ack_cccd_,
+            this->h_direct_rx_cccd_, this->h_svc2_ch1_cccd_,
+            this->h_svc2_ch2_cccd_};
+        if (param->write.handle != cccd_handles[this->cccd_step_]) {
+          break;
+        }
         if (param->write.status != ESP_GATT_OK) {
           ESP_LOGW(TAG, "CCCD descriptor write returned status=0x%02X on handle %u",
                    param->write.status, param->write.handle);
@@ -979,24 +972,20 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
         static_cast<uint8_t>((v1 >> 8) & 0xFF),
         static_cast<uint8_t>(v1 & 0xFF),
     };
-    this->send_direct_channel_(auth_req, sizeof(auth_req));
+    if (this->transport_.is_tx_in_progress()) {
+      std::memcpy(this->pending_rub_auth_req_, auth_req, sizeof(auth_req));
+      this->pending_rub_auth_tx_ = true;
+    } else {
+      this->pending_rub_auth_tx_ = false;
+      this->send_direct_channel_(auth_req, sizeof(auth_req));
+    }
     this->state_ = STATE_RUB_WAIT_AUTH_ACK;
     this->last_action_ms_ = millis();
     return;
   }
 
-  // RUB v2.01 Auth Ack (also used by CAN-IP v2.0 as ACK for Node Channel Upgrade 0x04):
-  // 02 xx 00 02 03 xx <node_or_FF> <level> ...
+  // RUB v2.01 Auth Ack: 02 xx 00 02 03 xx <node_or_FF> <level> ...
   if (msg_type == MSG_TYPE_RUB_AUTH && func == RUB_FUNC_AUTH_ACK && len >= 8) {
-    if (this->state_ == STATE_READY &&
-        this->active_req_.kind == RequestKind::NODE_UPGRADE) {
-      ESP_LOGI(TAG,
-               "CAN-IP channel upgrade ACK for node 0x%02X (granted level=%u)",
-               this->active_req_.node_id, payload[7]);
-      this->active_req_ = {};
-      this->consecutive_timeouts_ = 0;
-      return;
-    }
     if (this->state_ != STATE_RUB_WAIT_AUTH_ACK &&
         this->state_ != STATE_RUB_WAIT_CHALLENGE) {
       return;
@@ -1005,14 +994,8 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     uint8_t granted = payload[7];
     if (granted > 0) {
       this->reset_active_transaction_();
+      this->pending_rub_auth_tx_ = false;
       this->consecutive_timeouts_ = 0;
-      this->mark_node_upgraded_(this->default_node_id_);
-      // HIGH-05: Proactively schedule channel upgrades for any configured secondary CAN nodes
-      if (this->auth_level_ >= 3) {
-        this->pending_upgrade_nodes_mask_ =
-            this->registry_.get_configured_nodes_mask() &
-            ~(1UL << this->default_node_id_);
-      }
       this->stale_published_ = false;
       this->last_action_ms_ = millis();
 
@@ -1033,15 +1016,6 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
       this->publish_status_("CAN-BUS Auth Rejected");
       this->state_ = STATE_AUTH_FAILED;
       this->last_action_ms_ = millis();
-    }
-    return;
-  }
-
-  // Per-Node Channel Upgrade ACK
-  if (msg_type == MSG_TYPE_RUB_AUTH && func == RUB_FUNC_CHANNEL_UPGRADE) {
-    if (this->active_req_.kind == RequestKind::NODE_UPGRADE) {
-      this->active_req_ = {};
-      this->consecutive_timeouts_ = 0;
     }
     return;
   }
@@ -1135,15 +1109,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     this->consecutive_timeouts_ = 0;
     ESP_LOGI(TAG, "Write ACK for 0x%04X:%02X; reading back value", index,
              sub_index);
-    const uint32_t now = millis();
-    if (this->send_read_param_(node_id, index, sub_index)) {
-      this->active_req_.kind = RequestKind::READ;
-      this->active_req_.node_id = node_id;
-      this->active_req_.index = index;
-      this->active_req_.sub_index = sub_index;
-      this->active_req_.started_ms = now;
-      this->active_req_.last_activity_ms = now;
-    }
+    this->pending_readback_ = {true, node_id, index, sub_index};
     return;
   }
 
@@ -1172,15 +1138,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
              "Write NACK for 0x%04X:%02X (SDO abort=0x%08X: %s); reading back hardware state",
              index, sub_index, static_cast<unsigned>(abort_code),
              sdo_abort_code_str(abort_code));
-    const uint32_t now = millis();
-    if (this->send_read_param_(node_id, index, sub_index)) {
-      this->active_req_.kind = RequestKind::READ;
-      this->active_req_.node_id = node_id;
-      this->active_req_.index = index;
-      this->active_req_.sub_index = sub_index;
-      this->active_req_.started_ms = now;
-      this->active_req_.last_activity_ms = now;
-    }
+    this->pending_readback_ = {true, node_id, index, sub_index};
     return;
   }
 
@@ -1242,20 +1200,7 @@ void BdrBleComponent::handle_access_denied_(uint8_t node_id, uint16_t index,
                                             uint8_t status_code,
                                             uint32_t abort_code,
                                             bool from_get_list) {
-  // HIGH-05: 1) Check if a secondary CAN node channel needs authorization upgrade (FUNC 0x04)
-  if (node_id != this->default_node_id_ && !this->is_node_upgraded_(node_id) &&
-      this->auth_level_ >= 3) {
-    this->queue_node_upgrade_(node_id);
-    this->registry_.trigger_immediate_repoll_for_node(node_id);
-    this->active_group_idx_ = -1;
-    ESP_LOGI(TAG,
-             "Node 0x%02X returned Unsupported Access (0x06010000) on 0x%04X:%02X; "
-             "queuing CAN channel upgrade and immediate re-poll",
-             node_id, index, sub_index);
-    return;
-  }
-
-  // HIGH-05: 2) If this datapoint previously succeeded or is listed in 0x502B at <= auth_level_,
+  // HIGH-05: If this datapoint previously succeeded or is listed in 0x502B at <= auth_level_,
   // the boiler's RUB auth session was reset! Re-authenticate RUB instead of disabling it.
   const auto *dp = this->registry_.find_datapoint(node_id, index, sub_index);
   bool known_accessible =
@@ -1358,10 +1303,9 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
         case SdoAbortCategory::AUTH_OR_ACCESS_DENIED:
           this->handle_access_denied_(node_id, index, sub_index, status,
                                       abort_code, true);
-          // If handle_access_denied_() triggered RUB re-authentication or queued a node upgrade,
-          // stop processing the remaining items in this batch so they are not downgraded to single_read_only.
-          if (this->state_ != STATE_READY ||
-              this->pending_upgrade_nodes_mask_ != 0) {
+          // If handle_access_denied_() triggered RUB re-authentication, stop processing
+          // the remaining items in this batch so they are not downgraded to single_read_only.
+          if (this->state_ != STATE_READY) {
             return;
           }
           break;
@@ -1483,10 +1427,17 @@ void BdrBleComponent::loop() {
 
   if (this->state_ == STATE_RUB_WAIT_CHALLENGE ||
       this->state_ == STATE_RUB_WAIT_AUTH_ACK) {
+    if (this->pending_rub_auth_tx_ && !this->transport_.is_tx_in_progress()) {
+      this->pending_rub_auth_tx_ = false;
+      this->send_direct_channel_(this->pending_rub_auth_req_,
+                                 sizeof(this->pending_rub_auth_req_));
+      return;
+    }
     if (now - this->last_action_ms_ > HANDSHAKE_TIMEOUT_MS) {
       this->last_action_ms_ = now;
       if (this->retry_count_ < 3 && !this->transport_.is_tx_in_progress()) {
         this->retry_count_++;
+        this->pending_rub_auth_tx_ = false;
         this->state_ = STATE_RUB_WAIT_CHALLENGE;
         const uint8_t rub_chal_req[6] = {
             0x02, 0x01, 0x00, MSG_TYPE_RUB_AUTH, RUB_FUNC_CHALLENGE_REQ, 0x03};
@@ -1539,9 +1490,13 @@ void BdrBleComponent::loop() {
   }
 
   if (this->state_ == STATE_READY) {
-    // MEDIUM-10: Emit at most 2 BDR_SNAPSHOT lines per loop() tick to keep loop time < 15 ms
+    // MEDIUM-10: Drain BDR_SNAPSHOT lines (at most 2 per loop() tick) before starting polling
+    // so snapshot output stays contiguous and the gateway gets a brief pause after 0x502B:15.
     if (this->registry_.is_snapshot_logging_active()) {
-      this->registry_.log_snapshot_chunk(2);
+      if (this->registry_.log_snapshot_chunk(2)) {
+        this->last_action_ms_ = now;
+      }
+      return;
     }
 
     // Wait for multi-fragment TX to finish before timing out or starting a new request
@@ -1574,32 +1529,34 @@ void BdrBleComponent::loop() {
 
       if (timed_out.kind == RequestKind::WRITE) {
         ESP_LOGW(TAG,
-                 "Write confirmation for 0x%04X:%02X timed out; reading back value",
+                 "Write confirmation for 0x%04X:%02X timed out; scheduling readback",
                  timed_out.index, timed_out.sub_index);
-        if (this->send_read_param_(timed_out.node_id, timed_out.index,
-                                   timed_out.sub_index)) {
-          this->active_req_.kind = RequestKind::READ;
-          this->active_req_.node_id = timed_out.node_id;
-          this->active_req_.index = timed_out.index;
-          this->active_req_.sub_index = timed_out.sub_index;
-          this->active_req_.started_ms = now;
-          this->active_req_.last_activity_ms = now;
-        }
+        this->pending_readback_ = {true, timed_out.node_id, timed_out.index,
+                                   timed_out.sub_index};
         return;
       }
 
-      if (timed_out.kind == RequestKind::GET_LIST &&
-          this->active_group_idx_ >= 0 && this->get_list_stage_ < 2) {
-        this->get_list_stage_++;
-        if (this->get_list_stage_ == 1) {
-          ESP_LOGI(TAG, "GetListRequest v2.00 timed out; trying v2.01 header");
-          this->get_list_use_v200_ = false;
-          this->active_item_idx_ = 0;
+      if (timed_out.kind == RequestKind::READ) {
+        ESP_LOGW(TAG, "ReadRequest for 0x%04X:%02X timed out",
+                 timed_out.index, timed_out.sub_index);
+        return;
+      }
+
+      if (timed_out.kind == RequestKind::GET_LIST) {
+        if (this->active_group_idx_ >= 0 && this->get_list_stage_ < 2) {
+          this->get_list_stage_++;
+          if (this->get_list_stage_ == 1) {
+            ESP_LOGW(TAG, "GetListRequest (v2.00) timed out; retrying once");
+            this->active_item_idx_ = 0;
+          } else {
+            ESP_LOGI(TAG,
+                     "GetListRequest not supported over DirectChannel; using sequential single-read polling");
+            this->get_list_stage_ = 3;
+            this->active_item_idx_ = 0;
+          }
         } else {
-          ESP_LOGI(TAG,
-                   "GetListRequest not supported over DirectChannel; using sequential single-read polling");
-          this->get_list_stage_ = 3;
-          this->active_item_idx_ = 0;
+          ESP_LOGW(TAG, "GetListRequest (%u items) timed out",
+                   timed_out.expected_list_count);
         }
       }
       return;
@@ -1612,22 +1569,17 @@ void BdrBleComponent::loop() {
     }
     this->cooldown_until_ms_ = 0;
 
-    // Priority 0: Execute pending secondary-node CAN channel upgrades (HIGH-05)
-    if (this->pending_upgrade_nodes_mask_ != 0 &&
+    // Priority 0: Execute deferred post-write readback once TX is free and cooldown elapsed
+    if (this->pending_readback_.pending &&
         this->active_req_.kind == RequestKind::NONE && !channel_busy &&
         (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
-      uint8_t upgrade_node = 0;
-      for (uint8_t n = 0; n < 32; n++) {
-        if ((this->pending_upgrade_nodes_mask_ & (1UL << n)) != 0) {
-          upgrade_node = n;
-          this->pending_upgrade_nodes_mask_ &= ~(1UL << n);
-          break;
-        }
-      }
-      this->mark_node_upgraded_(upgrade_node);
-      if (this->send_node_channel_upgrade_(upgrade_node)) {
-        this->active_req_.kind = RequestKind::NODE_UPGRADE;
-        this->active_req_.node_id = upgrade_node;
+      PendingReadback rb = this->pending_readback_;
+      this->pending_readback_ = {};
+      if (this->send_read_param_(rb.node_id, rb.index, rb.sub_index)) {
+        this->active_req_.kind = RequestKind::READ;
+        this->active_req_.node_id = rb.node_id;
+        this->active_req_.index = rb.index;
+        this->active_req_.sub_index = rb.sub_index;
         this->active_req_.started_ms = now;
         this->active_req_.last_activity_ms = now;
       }
@@ -1744,8 +1696,7 @@ void BdrBleComponent::loop() {
 
         if (batch_count > 1) {
           const auto &first_dp = grp.items[batch_indices[0]];
-          if (this->send_get_list_batch_(grp, batch_indices, batch_count,
-                                         this->get_list_use_v200_)) {
+          if (this->send_get_list_batch_(grp, batch_indices, batch_count)) {
             this->active_req_.kind = RequestKind::GET_LIST;
             this->active_req_.expected_list_count =
                 static_cast<uint8_t>(batch_count);

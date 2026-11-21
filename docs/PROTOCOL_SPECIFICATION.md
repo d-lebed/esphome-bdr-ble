@@ -277,9 +277,9 @@ NOTIFY handle=20 (15B): FF 01 02 01 00 00 01 03 01 50 16 00 0B ...          -> 0
 ### Bulk / Batch Read: `GetListRequest` & `GetListResponse` (`Function = 0x08` / `0x09`)
 To read multiple parameters in a single round-trip (up to ~1412–1518 bytes per response), `bdr_ble` uses the **`GetList` (`Function = 0x08`)** command:
 - **`GetListRequest` payload** (`requestHeaderSize = 7`, `requestElementSize = 5`, `responseElementHeaderSize = 8`, `maxElements = 100`, `maxResponseSize = 1518`):
-  - `byte[0..3]`: `02 01 00 00` (RUB v2.01; or `02 00 00 00` on v2.00)
+  - `byte[0..3]`: `02 00 00 00` (canonical CAN-IP v2.00 `GetListRequest` header)
   - `byte[4]`: `0x08` (`Function = 0x08` = `GetListRequest`)
-  - `byte[5]`: `0x03` (RUB v2.01; or `0x00` on v2.00)
+  - `byte[5]`: `0x00`
   - `byte[6]`: `count` (`uint8` — number of items requested in this batch)
   - Followed by `count` items of **5 bytes** each (`[0x00, node_id, index_hi, index_lo, sub_index]`):
     - `item[0]`: `0x00` (Read function)
@@ -301,7 +301,7 @@ To read multiple parameters in a single round-trip (up to ~1412–1518 bytes per
   - Permanent unsupported SDO abort codes (`0x06020000` Object does not exist, `0x06090011` Sub-index does not exist, `0x06010001` Write-only) mark the datapoint as `unsupported` (`Auto-Skip`).
   - `GetList`-incompatible SDO abort codes (`0x06040043`, `0x06070010`) switch that datapoint to individual `ReadRequest (0x00)` polling (`single_read_only`).
   - Transient CAN bus timeouts (`0x05040000`, `0x08000000`, `0x08000022`, `0x08000024`) keep the datapoint in the `GetList` batch for the next cycle.
-  - If `0x06010000` (`Unsupported access to object`) is returned on a secondary `node_id`, `bdr_ble` sends a per-node CAN channel upgrade (`02 00 00 02 04 00 <node_id> <auth_level>`); if returned on a previously working datapoint, `bdr_ble` automatically re-authenticates the `RUB v2.01` session.
+  - If `0x06010000` (`Unsupported access to object`) is returned on a previously working datapoint (or one discovered in `0x502B` at `<= auth_level`), `bdr_ble` automatically re-authenticates the `RUB v2.01` session (`0xFF` broadcast unlock covers all CAN nodes).
 
 ---
 

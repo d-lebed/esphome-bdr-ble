@@ -46,13 +46,19 @@ struct PendingWrite {
   std::vector<uint8_t> data;
 };
 
+struct PendingReadback {
+  bool pending{false};
+  uint8_t node_id{0x01};
+  uint16_t index{0};
+  uint8_t sub_index{0};
+};
+
 enum class RequestKind : uint8_t {
   NONE = 0,
   SNAPSHOT,
   READ,
   WRITE,
   GET_LIST,
-  NODE_UPGRADE,
 };
 
 struct ActiveRequest {
@@ -136,6 +142,16 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                                                    sub_index);
   }
 
+  bool check_datapoint_bounds(uint8_t node_id, uint16_t index,
+                              uint8_t sub_index, uint32_t raw_val,
+                              uint32_t &out_min, uint32_t &out_max) const {
+    uint8_t resolved_node =
+        (node_id == 0xFF) ? this->default_node_id_ : node_id;
+    return this->registry_.check_datapoint_bounds(resolved_node, index,
+                                                  sub_index, raw_val, out_min,
+                                                  out_max);
+  }
+
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                            esp_ble_gattc_cb_param_t *param) override;
   void gap_event_handler(esp_gap_ble_cb_event_t event,
@@ -186,8 +202,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   bool send_write_param_(uint8_t node_id, uint16_t index, uint8_t sub_index,
                          const uint8_t *data, size_t data_len);
   bool send_get_list_batch_(const PollGroup &grp, const size_t *item_indices,
-                            size_t count, bool use_v200_header);
-  bool send_node_channel_upgrade_(uint8_t node_id);
+                            size_t count);
 
   void handle_notify_(uint16_t handle, const uint8_t *data, uint16_t len);
   void handle_direct_segment_(const uint8_t *data, uint16_t len);
@@ -198,19 +213,6 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void handle_access_denied_(uint8_t node_id, uint16_t index, uint8_t sub_index,
                              uint8_t status_code, uint32_t abort_code,
                              bool from_get_list);
-  bool is_node_upgraded_(uint8_t node_id) const {
-    return (node_id < 32) && ((this->upgraded_nodes_mask_ & (1UL << node_id)) != 0);
-  }
-  void mark_node_upgraded_(uint8_t node_id) {
-    if (node_id < 32) {
-      this->upgraded_nodes_mask_ |= (1UL << node_id);
-    }
-  }
-  void queue_node_upgrade_(uint8_t node_id) {
-    if (node_id < 32) {
-      this->pending_upgrade_nodes_mask_ |= (1UL << node_id);
-    }
-  }
 
   State state_{STATE_DISCONNECTED};
   CccdSubState cccd_substate_{CCCD_IDLE};
@@ -253,14 +255,14 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   DirectChannelTransport transport_;
   BdrDatapointRegistry registry_;
   std::deque<PendingWrite> write_queue_;
+  PendingReadback pending_readback_;
+  bool pending_rub_auth_tx_{false};
+  uint8_t pending_rub_auth_req_[16]{};
   ActiveRequest active_req_;
   int active_group_idx_{-1};
   size_t active_item_idx_{0};
-  uint8_t get_list_stage_{0};  // 0=try 02 00..00 (v2.00), 1=try 02 01..03 (v2.01), 2=confirmed, 3=fallback to single 0x00
-  bool get_list_use_v200_{true};
+  uint8_t get_list_stage_{0};  // 0=initial v2.00 try, 1=retry v2.00 once, 2=confirmed, 3=fallback to single 0x00
   uint16_t negotiated_mtu_{23};
-  uint32_t upgraded_nodes_mask_{0};
-  uint32_t pending_upgrade_nodes_mask_{0};
 
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *status_text_{nullptr};

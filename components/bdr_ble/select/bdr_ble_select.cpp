@@ -29,6 +29,21 @@ void BdrBleSelect::control(const std::string &value) {
   uint8_t resolved_node = (this->node_id_ == 0xFF)
                               ? this->parent_->get_default_node_id()
                               : this->node_id_;
+  uint32_t min_bound = 0, max_bound = 0;
+  if (!this->parent_->check_datapoint_bounds(
+          resolved_node, this->index_, this->sub_index_,
+          static_cast<uint32_t>(raw_val), min_bound, max_bound)) {
+    ESP_LOGW(TAG,
+             "Refusing select write '%s' (raw=%d) for 0x%04X:%02X: outside hardware range [%u..%u]",
+             value.c_str(), static_cast<int>(raw_val), this->index_,
+             this->sub_index_, static_cast<unsigned>(min_bound),
+             static_cast<unsigned>(max_bound));
+    if (auto idx = this->active_index(); idx.has_value()) {
+      this->publish_state(*idx);
+    }
+    return;
+  }
+
   uint8_t wire_size = this->parent_->get_datapoint_wire_size(
       resolved_node, this->index_, this->sub_index_);
 

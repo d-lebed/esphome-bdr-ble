@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GTW-IoT / DirectChannel `GetListRequest` & Session Stability (Issue #2):**
+  - Removed unsupported CAN-IP v2.00 per-node channel upgrade (`02 00 00 02 04 00`) frames over BLE DirectChannel (`RUB v2.01` auth with `0xFF` already unlocks all nodes; sending `0x04` on `STATE_READY` entry timed out and could wedge `GTW-IoT` hubs until reboot).
+  - Removed the invalid `GetListRequest` `v2.01` (`02 01 00 00 08 03`) fallback header; `GetListRequest (0x08)` now always uses the canonical `v2.00` (`02 00 00 00 08 00`) header and retries once before falling back to single-read polling.
+  - Waits for chunked `BDR_SNAPSHOT` logging to finish before starting `STATE_READY` polling so snapshot output remains contiguous and gateways get a clean pause after `0x502B:15`.
+  - Deferred post-write readbacks (`WritePosAck`/`WriteNegAck`/write timeout) and pending `RUB_AUTH_REQ` transmissions to `loop()` so fast BLE notifications arriving before `ESP_GATTC_WRITE_CHAR_EVT` never fail with `DirectChannel TX rejected (tx_in_progress=1)`.
+  - Verified the descriptor handle in `ESP_GATTC_WRITE_DESCR_EVT` during `STATE_SUBSCRIBING` so duplicate CCCD writes cannot skip the next characteristic subscription.
+  - Required strict `min < max` when adopting `0x502B` descriptor bounds so read-only signals/counters with `0..0` bounds never reject non-zero values, and added explicit warning logs on `ReadRequest` and confirmed `GetListRequest` timeouts.
+- **Dynamic `0x502B` Select Option Filtering & Range Guard:**
+  - Dynamically filters `select:` entity options from each appliance's live `0x502B` `min..max` descriptors at runtime (just like `number:` limits), avoiding hardcoded per-parameter enum subsets across different controllers while excluding non-writable runtime states (such as `Temporary` on `CP320` / `DP200`).
+  - Added a runtime `0x502B` hardware range guard in `BdrBleSelect::control()` to reject out-of-range enum writes with a clear warning and restore the current valid state before transmitting.
+
 ---
 
 ## [1.5.0] - 2026-11-20

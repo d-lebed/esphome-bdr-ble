@@ -109,14 +109,17 @@ class BdrDatapointRegistry {
   uint8_t get_datapoint_wire_size(uint8_t node_id, uint16_t index,
                                   uint8_t sub_index) const;
 
+  /// Check an unsigned raw value against 0x502B hardware bounds if available.
+  /// Returns true if allowed (or if no bounds were reported); returns false and fills out_min/out_max if out of range.
+  bool check_datapoint_bounds(uint8_t node_id, uint16_t index,
+                              uint8_t sub_index, uint32_t raw_val,
+                              uint32_t &out_min, uint32_t &out_max) const;
+
   /// Reset per-connection flags (`unsupported`, `single_read_only`, `discovered_datapoints_`)
   void on_connect();
 
   /// Reset poll cycle timestamps when entering STATE_READY
   void reset_poll_timers();
-
-  /// Return bitmask of all configured node_ids (< 32) across poll groups
-  uint32_t get_configured_nodes_mask() const;
 
   /// Reset last_cycle_start_ms = 0 for any group containing `node_id` so it is re-polled immediately
   void trigger_immediate_repoll_for_node(uint8_t node_id);

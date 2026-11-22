@@ -12,12 +12,6 @@
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
-#ifdef USE_NUMBER
-#include "esphome/components/number/number.h"
-#endif
-#ifdef USE_SELECT
-#include "esphome/components/select/select.h"
-#endif
 #ifdef USE_TEXT
 #include "esphome/components/text/text.h"
 #endif
@@ -29,6 +23,13 @@
 #include "bdr_protocol.h"
 
 namespace esphome::bdr_ble {
+
+#ifdef USE_BDR_BLE_NUMBER
+class BdrBleNumber;
+#endif
+#ifdef USE_BDR_BLE_SELECT
+class BdrBleSelect;
+#endif
 
 /// Flash-backed (.rodata) enum option entry emitted at compile time by obd.py / schema_helpers.py.
 struct EnumEntry {
@@ -67,11 +68,11 @@ struct DatapointRegistration {
 #ifdef USE_TEXT_SENSOR
   std::vector<text_sensor::TextSensor *> text_sensors;
 #endif
-#ifdef USE_NUMBER
-  std::vector<number::Number *> numbers;
+#ifdef USE_BDR_BLE_NUMBER
+  std::vector<BdrBleNumber *> numbers;
 #endif
-#ifdef USE_SELECT
-  std::vector<select::Select *> selects;
+#ifdef USE_BDR_BLE_SELECT
+  std::vector<BdrBleSelect *> selects;
 #endif
 #ifdef USE_TEXT
   std::vector<text::Text *> texts;

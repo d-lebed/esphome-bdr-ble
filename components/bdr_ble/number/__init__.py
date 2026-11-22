@@ -30,6 +30,7 @@ from .. import (
 )
 from ..obd import DATA_TYPE_MAP, NUMERIC_DATA_TYPES, infer_number_metadata
 from ..schema_helpers import (
+    CONF_DEVICE_LIMITS,
     CONF_RESOLVED_GAIN,
     CONF_RESOLVED_INDEX,
     CONF_RESOLVED_SUB,
@@ -46,7 +47,10 @@ DEPENDENCIES = ["bdr_ble"]
 CONF_NUMBERS = "numbers"
 
 BdrBleNumber = bdr_ble_ns.class_(
-    "BdrBleNumber", number.Number, cg.Parented.template(BdrBleComponent)
+    "BdrBleNumber",
+    number.Number,
+    cg.Component,
+    cg.Parented.template(BdrBleComponent),
 )
 
 
@@ -109,6 +113,7 @@ _NUMBER_ITEM_BASE = number.number_schema(
         cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
         cv.Optional(CONF_SCALE): cv.positive_float,
         cv.Optional(CONF_TYPE): cv.string,
+        cv.Optional(CONF_DEVICE_LIMITS, default=True): cv.boolean,
         cv.Required(CONF_MIN_VALUE): cv.float_,
         cv.Required(CONF_MAX_VALUE): cv.float_,
         cv.Required(CONF_STEP): cv.positive_float,
@@ -117,7 +122,7 @@ _NUMBER_ITEM_BASE = number.number_schema(
         cv.Required(CONF_RESOLVED_TYPE): cv.int_,
         cv.Required(CONF_RESOLVED_GAIN): cv.float_,
     }
-)
+).extend(cv.COMPONENT_SCHEMA)
 
 CONFIG_SCHEMA = make_platform_schema(
     _preprocess_number_item,
@@ -129,6 +134,7 @@ CONFIG_SCHEMA = make_platform_schema(
 
 
 async def to_code(config: dict[str, Any]) -> None:
+    cg.add_define("USE_BDR_BLE_NUMBER")
     hub = await cg.get_variable(config[CONF_BDR_BLE_ID])
     for item_cfg, interval_ms, node_id_val in iter_platform_items(config, CONF_NUMBERS):
         num = await number.new_number(
@@ -137,6 +143,7 @@ async def to_code(config: dict[str, Any]) -> None:
             max_value=item_cfg[CONF_MAX_VALUE],
             step=item_cfg[CONF_STEP],
         )
+        await cg.register_component(num, item_cfg)
         await cg.register_parented(num, hub)
         cg.add(
             num.set_datapoint_meta(
@@ -147,6 +154,7 @@ async def to_code(config: dict[str, Any]) -> None:
                 item_cfg[CONF_RESOLVED_GAIN],
             )
         )
+        cg.add(num.set_use_device_limits(item_cfg[CONF_DEVICE_LIMITS]))
         cg.add(
             hub.register_number(
                 num,

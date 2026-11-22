@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **NVS Flash Persistence for Learned `0x502B` Limits (`number` & `select`):**
+  - `BdrBleNumber` and `BdrBleSelect` now persist learned `0x502B` hardware limits (`min`/`max`/`step` for `number`, allowed `[raw_min..raw_max]` bounds for `select`) to ESP32 NVS flash (`ESPPreferenceObject`, written only when values change) and restore them in `setup()` (`setup_priority::DATA`) before Home Assistant connects to the Native API.
+  - Added optional `device_limits: true/false` (default `true`) per entity on `number:` and `select:` so users can opt out when enforcing custom manual YAML bounds or full enum option lists.
+- **Local Range Guard in `BdrBleNumber::control()`:**
+  - Rejects non-finite and out-of-range numeric writes locally against `0x502B` hardware bounds (or configured YAML bounds when `device_limits: false`) and immediately restores the current valid state in Home Assistant without sending invalid writes over BLE.
+
+### Changed
+- **Encapsulated Entity Trait Updates & Subpackage Build Guards:**
+  - Moved `0x502B` trait mutation and dynamic `select` option filtering out of `BdrDatapointRegistry` into `BdrBleNumber::apply_device_limits()` and `BdrBleSelect::apply_device_bounds()`.
+  - Added component-specific `USE_BDR_BLE_NUMBER` and `USE_BDR_BLE_SELECT` compile defines so configuring an unrelated ESPHome `number:` or `select:` platform alongside `bdr_ble` never breaks header inclusion.
+
 ---
 
 ## [1.5.1] - 2026-11-22

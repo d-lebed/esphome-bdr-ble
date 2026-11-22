@@ -105,7 +105,7 @@ void BdrBleComponent::register_text_sensor(text_sensor::TextSensor *sens,
 }
 #endif
 
-#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
+#if defined(USE_TEXT_SENSOR) || defined(USE_BDR_BLE_SELECT)
 void BdrBleComponent::register_enum_table(uint16_t index, uint8_t sub_index,
                                           const EnumEntry *table, size_t len,
                                           uint8_t node_id) {
@@ -114,8 +114,8 @@ void BdrBleComponent::register_enum_table(uint16_t index, uint8_t sub_index,
 }
 #endif
 
-#ifdef USE_NUMBER
-void BdrBleComponent::register_number(number::Number *num, uint16_t index,
+#ifdef USE_BDR_BLE_NUMBER
+void BdrBleComponent::register_number(BdrBleNumber *num, uint16_t index,
                                       uint8_t sub_index, uint8_t data_type,
                                       float scale, uint32_t interval_ms,
                                       uint8_t node_id) {
@@ -126,8 +126,8 @@ void BdrBleComponent::register_number(number::Number *num, uint16_t index,
 }
 #endif
 
-#ifdef USE_SELECT
-void BdrBleComponent::register_select(select::Select *sel, uint16_t index,
+#ifdef USE_BDR_BLE_SELECT
+void BdrBleComponent::register_select(BdrBleSelect *sel, uint16_t index,
                                       uint8_t sub_index, uint32_t interval_ms,
                                       uint8_t node_id) {
   auto &dp = this->registry_.get_or_create_datapoint(

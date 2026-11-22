@@ -28,6 +28,7 @@ from . import (
 from .obd import get_enum_mapping, resolve_parameter
 
 CONF_SCALE = "scale"
+CONF_DEVICE_LIMITS = "device_limits"
 CONF_RESOLVED_INDEX = "_obd_index"
 CONF_RESOLVED_SUB = "_obd_sub"
 CONF_RESOLVED_TYPE = "_obd_type"

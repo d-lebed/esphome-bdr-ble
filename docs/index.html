@@ -976,7 +976,7 @@ text_sensor:
 
         <h3 data-i18n="cfg_number_title">5. Writable Numeric Parameters (<code>number</code>)</h3>
         <p data-i18n="cfg_number_desc">
-          Supports editing writable numeric parameters (<code>U8</code>, <code>I8</code>, <code>U16</code>, <code>I16</code>, <code>U32</code>, <code>I32</code>, such as DHW comfort/eco setpoints, heating curve slopes, or zone flow setpoints). When the boiler connects and reports its <code>0x502B</code> descriptors, <code>bdr_ble</code> dynamically updates each <code>number</code> entity's <code>min_value</code>, <code>max_value</code>, and <code>step</code> to the exact hardware limits of your boiler.
+          Supports editing writable numeric parameters (<code>U8</code>, <code>I8</code>, <code>U16</code>, <code>I16</code>, <code>U32</code>, <code>I32</code>, such as DHW comfort/eco setpoints, heating curve slopes, or zone flow setpoints). When the boiler connects and reports its <code>0x502B</code> descriptors, <code>bdr_ble</code> dynamically updates each <code>number</code> entity's <code>min_value</code>, <code>max_value</code>, and <code>step</code> to the exact hardware limits of your boiler, persists them in ESP32 NVS flash so Home Assistant sees them immediately on subsequent boots, and rejects out-of-range writes locally (disable per entity with <code>device_limits: false</code>).
         </p>
         <pre><code>number:
   - platform: bdr_ble
@@ -991,7 +991,7 @@ text_sensor:
 
         <h3 data-i18n="cfg_select_title">6. Writable Enum Parameters (<code>select</code>)</h3>
         <p data-i18n="cfg_select_desc">
-          Supports editing enumerated parameters (such as DHW operating mode or heating zone mode). Dropdown options are populated automatically at compile time from <code>obd_catalog.json</code>.
+          Supports editing enumerated parameters (such as DHW operating mode or heating zone mode). Dropdown options are populated automatically at compile time from <code>obd_catalog.json</code>, dynamically filtered against the boiler's <code>0x502B</code> hardware range, and persisted in ESP32 NVS flash (disable per entity with <code>device_limits: false</code>).
         </p>
         <pre><code>select:
   - platform: bdr_ble

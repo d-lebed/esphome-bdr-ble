@@ -1,5 +1,12 @@
 #include "bdr_registry.h"
 
+#ifdef USE_BDR_BLE_NUMBER
+#include "number/bdr_ble_number.h"
+#endif
+#ifdef USE_BDR_BLE_SELECT
+#include "select/bdr_ble_select.h"
+#endif
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -18,31 +25,6 @@ template <typename T>
 inline const char *entity_log_name(const T *e, long) {
   return e->get_name().c_str();
 }
-
-#ifdef USE_SELECT
-inline const char *select_option_c_str(const char *s) { return s; }
-inline const char *select_option_c_str(const std::string &s) { return s.c_str(); }
-
-template <typename TraitsT>
-void apply_dynamic_select_options(TraitsT &traits,
-                                  const std::vector<const char *> &opts) {
-  if constexpr (requires { traits.set_options(FixedVector<const char *>{}); }) {
-    FixedVector<const char *> fv;
-    fv.init(opts.size());
-    for (const char *s : opts) {
-      fv.push_back(s);
-    }
-    traits.set_options(fv);
-  } else if constexpr (requires { traits.set_options(std::vector<std::string>{}); }) {
-    std::vector<std::string> sv;
-    sv.reserve(opts.size());
-    for (const char *s : opts) {
-      sv.emplace_back(s);
-    }
-    traits.set_options(sv);
-  }
-}
-#endif
 
 bool extract_raw_int64(BdrDataType data_type, const uint8_t *data,
                        size_t data_len, int64_t &out_raw) {
@@ -341,7 +323,7 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
                          (static_cast<uint32_t>(data[off + 10]) << 16) |
                          (static_cast<uint32_t>(data[off + 11]) << 24);
     uint8_t dp_sub = data[off + 12];
-#ifdef USE_NUMBER
+#ifdef USE_BDR_BLE_NUMBER
     uint8_t raw_inc = data[off + 13];
 #endif
 
@@ -364,7 +346,7 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
           dp->has_descriptor_bounds = true;
           dp->raw_min = raw_min_u;
           dp->raw_max = raw_max_u;
-#ifdef USE_NUMBER
+#ifdef USE_BDR_BLE_NUMBER
           if (!dp->numbers.empty()) {
             float min_f =
                 is_signed
@@ -376,78 +358,20 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
                     ? static_cast<float>(static_cast<int32_t>(raw_max_u)) *
                           dp->scale
                     : static_cast<float>(raw_max_u) * dp->scale;
+            float step_f = (raw_inc > 0 && raw_inc != 0xFF)
+                               ? static_cast<float>(raw_inc) * dp->scale
+                               : NAN;
             if (min_f < max_f) {
               for (auto *num : dp->numbers) {
-                num->traits.set_min_value(min_f);
-                num->traits.set_max_value(max_f);
-                if (raw_inc > 0 && raw_inc != 0xFF) {
-                  num->traits.set_step(static_cast<float>(raw_inc) * dp->scale);
-                }
+                num->apply_device_limits(min_f, max_f, step_f);
               }
-              ESP_LOGI(TAG,
-                       "Updated limits for 0x%04X:%02X from 0x502B: min=%.2f max=%.2f",
-                       dp_idx, dp_sub, min_f, max_f);
             }
           }
 #endif
-#ifdef USE_SELECT
-          if (!dp->selects.empty() && dp->enum_table != nullptr &&
-              dp->enum_table_len > 0) {
-            std::vector<const char *> filtered;
-            filtered.reserve(dp->enum_table_len);
-            for (size_t i = 0; i < dp->enum_table_len; i++) {
-              const auto &entry = dp->enum_table[i];
-              if (entry.label == nullptr || entry.value < raw_min_u ||
-                  entry.value > raw_max_u) {
-                continue;
-              }
-              bool dup = false;
-              for (const char *existing : filtered) {
-                if (std::strcmp(existing, entry.label) == 0) {
-                  dup = true;
-                  break;
-                }
-              }
-              if (!dup) {
-                filtered.push_back(entry.label);
-              }
-            }
-            if (!filtered.empty()) {
-              bool updated_any = false;
-              for (auto *sel : dp->selects) {
-                const auto &cur = sel->traits.get_options();
-                bool same = (cur.size() == filtered.size());
-                if (same) {
-                  for (size_t i = 0; i < filtered.size(); i++) {
-                    if (std::strcmp(select_option_c_str(cur[i]), filtered[i]) != 0) {
-                      same = false;
-                      break;
-                    }
-                  }
-                }
-                if (!same) {
-                  std::string prev_label;
-                  bool had_prev = false;
-                  if (auto idx = sel->active_index();
-                      idx.has_value() && *idx < cur.size()) {
-                    prev_label = select_option_c_str(cur[*idx]);
-                    had_prev = true;
-                  }
-                  apply_dynamic_select_options(sel->traits, filtered);
-                  if (had_prev) {
-                    sel->publish_state(prev_label);
-                  }
-                  updated_any = true;
-                }
-              }
-              if (updated_any) {
-                ESP_LOGI(
-                    TAG,
-                    "Updated select options for 0x%04X:%02X from 0x502B: %zu options (range %u..%u)",
-                    dp_idx, dp_sub, filtered.size(),
-                    static_cast<unsigned>(raw_min_u),
-                    static_cast<unsigned>(raw_max_u));
-              }
+#ifdef USE_BDR_BLE_SELECT
+          if (!dp->selects.empty()) {
+            for (auto *sel : dp->selects) {
+              sel->apply_device_bounds(raw_min_u, raw_max_u);
             }
           }
 #endif
@@ -551,12 +475,12 @@ void BdrDatapointRegistry::mark_datapoint_unsupported(uint8_t node_id,
     entity_name = entity_log_name(dp->text_sensors[0], 0);
   }
 #endif
-#ifdef USE_NUMBER
+#ifdef USE_BDR_BLE_NUMBER
   if (!dp->numbers.empty() && dp->numbers[0] != nullptr) {
     entity_name = entity_log_name(dp->numbers[0], 0);
   }
 #endif
-#ifdef USE_SELECT
+#ifdef USE_BDR_BLE_SELECT
   if (!dp->selects.empty() && dp->selects[0] != nullptr) {
     entity_name = entity_log_name(dp->selects[0], 0);
   }
@@ -692,7 +616,7 @@ void BdrDatapointRegistry::dispatch_datapoint_value(uint8_t node_id,
   }
 #endif
 
-#ifdef USE_NUMBER
+#ifdef USE_BDR_BLE_NUMBER
   if (valid_numeric) {
     for (auto *num : dp->numbers) {
       num->publish_state(numeric_val);
@@ -700,7 +624,7 @@ void BdrDatapointRegistry::dispatch_datapoint_value(uint8_t node_id,
   }
 #endif
 
-#ifdef USE_SELECT
+#ifdef USE_BDR_BLE_SELECT
   if (enum_label != nullptr) {
     for (auto *sel : dp->selects) {
       sel->publish_state(enum_label);

@@ -16,12 +16,6 @@
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
-#ifdef USE_NUMBER
-#include "esphome/components/number/number.h"
-#endif
-#ifdef USE_SELECT
-#include "esphome/components/select/select.h"
-#endif
 #ifdef USE_TEXT
 #include "esphome/components/text/text.h"
 #endif
@@ -109,20 +103,20 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                             uint8_t node_id = 0xFF);
 #endif
 
-#if defined(USE_TEXT_SENSOR) || defined(USE_SELECT)
+#if defined(USE_TEXT_SENSOR) || defined(USE_BDR_BLE_SELECT)
   void register_enum_table(uint16_t index, uint8_t sub_index,
                            const EnumEntry *table, size_t len,
                            uint8_t node_id = 0xFF);
 #endif
 
-#ifdef USE_NUMBER
-  void register_number(number::Number *num, uint16_t index, uint8_t sub_index,
+#ifdef USE_BDR_BLE_NUMBER
+  void register_number(BdrBleNumber *num, uint16_t index, uint8_t sub_index,
                        uint8_t data_type, float scale, uint32_t interval_ms,
                        uint8_t node_id = 0xFF);
 #endif
 
-#ifdef USE_SELECT
-  void register_select(select::Select *sel, uint16_t index, uint8_t sub_index,
+#ifdef USE_BDR_BLE_SELECT
+  void register_select(BdrBleSelect *sel, uint16_t index, uint8_t sub_index,
                        uint32_t interval_ms, uint8_t node_id = 0xFF);
 #endif
 

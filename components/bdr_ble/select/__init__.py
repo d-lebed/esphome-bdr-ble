@@ -23,6 +23,7 @@ from .. import (
 )
 from ..obd import get_enum_mapping, infer_sensor_metadata
 from ..schema_helpers import (
+    CONF_DEVICE_LIMITS,
     CONF_RESOLVED_ENUM,
     CONF_RESOLVED_INDEX,
     CONF_RESOLVED_SUB,
@@ -38,7 +39,10 @@ DEPENDENCIES = ["bdr_ble"]
 CONF_SELECTS = "selects"
 
 BdrBleSelect = bdr_ble_ns.class_(
-    "BdrBleSelect", select.Select, cg.Parented.template(BdrBleComponent)
+    "BdrBleSelect",
+    select.Select,
+    cg.Component,
+    cg.Parented.template(BdrBleComponent),
 )
 
 
@@ -88,11 +92,12 @@ _SELECT_ITEM_BASE = select.select_schema(
         cv.Required(CONF_PARAMETER): cv.string,
         cv.Optional(CONF_SUB_INDEX): cv.int_range(min=0, max=255),
         cv.Optional(CONF_NODE_ID): cv.int_range(min=0, max=255),
+        cv.Optional(CONF_DEVICE_LIMITS, default=True): cv.boolean,
         cv.Required(CONF_RESOLVED_INDEX): cv.int_,
         cv.Required(CONF_RESOLVED_SUB): cv.int_,
         cv.Required(CONF_RESOLVED_ENUM): cv.string,
     }
-)
+).extend(cv.COMPONENT_SCHEMA)
 
 CONFIG_SCHEMA = make_platform_schema(
     _preprocess_select_item,
@@ -104,6 +109,7 @@ CONFIG_SCHEMA = make_platform_schema(
 
 
 async def to_code(config: dict[str, Any]) -> None:
+    cg.add_define("USE_BDR_BLE_SELECT")
     hub = await cg.get_variable(config[CONF_BDR_BLE_ID])
     for item_cfg, interval_ms, node_id_val in iter_platform_items(config, CONF_SELECTS):
         enum_name = item_cfg[CONF_RESOLVED_ENUM]
@@ -116,6 +122,7 @@ async def to_code(config: dict[str, Any]) -> None:
                 options.append(desc)
 
         sel = await select.new_select(item_cfg, options=options)
+        await cg.register_component(sel, item_cfg)
         await cg.register_parented(sel, hub)
 
         table_expr, table_len = emit_flash_enum_table(enum_name)
@@ -127,6 +134,7 @@ async def to_code(config: dict[str, Any]) -> None:
             )
         )
         cg.add(sel.set_enum_table(table_expr, table_len))
+        cg.add(sel.set_use_device_limits(item_cfg[CONF_DEVICE_LIMITS]))
         cg.add(
             hub.register_select(
                 sel,

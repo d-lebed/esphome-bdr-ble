@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.5.1] - 2026-11-22
+
 ### Fixed
 - **GTW-IoT / DirectChannel `GetListRequest` & Session Stability (Issue #2):**
   - Removed unsupported CAN-IP v2.00 per-node channel upgrade (`02 00 00 02 04 00`) frames over BLE DirectChannel (`RUB v2.01` auth with `0xFF` already unlocks all nodes; sending `0x04` on `STATE_READY` entry timed out and could wedge `GTW-IoT` hubs until reboot).
@@ -185,7 +189,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.0...v1.3.1

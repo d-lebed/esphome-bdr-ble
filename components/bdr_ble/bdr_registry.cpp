@@ -130,7 +130,7 @@ bool is_boolean_enum_table(const EnumEntry *table, size_t len) {
 }
 
 void BdrDatapointRegistry::reserve() {
-  this->discovered_datapoints_.reserve(256);
+  this->discovered_snapshots_.reserve(4);
 }
 
 DatapointRegistration *BdrDatapointRegistry::find_datapoint(uint8_t node_id,
@@ -251,10 +251,25 @@ bool BdrDatapointRegistry::check_datapoint_bounds(uint8_t node_id,
   return raw_val >= dp->raw_min && raw_val <= dp->raw_max;
 }
 
+BdrDatapointRegistry::NodeSnapshot &
+BdrDatapointRegistry::find_or_create_node_snapshot_(uint8_t node_id) {
+  for (auto &snap : this->discovered_snapshots_) {
+    if (snap.node_id == node_id) {
+      return snap;
+    }
+  }
+  NodeSnapshot snap;
+  snap.node_id = node_id;
+  snap.entries.reserve(256);
+  this->discovered_snapshots_.push_back(std::move(snap));
+  return this->discovered_snapshots_.back();
+}
+
 void BdrDatapointRegistry::on_connect() {
-  this->discovered_datapoints_.clear();
+  this->discovered_snapshots_.clear();
   this->snapshot_logging_active_ = false;
   this->snapshot_header_logged_ = false;
+  this->snapshot_node_log_idx_ = 0;
   this->snapshot_log_cursor_ = 0;
   for (auto &grp : this->poll_groups_) {
     for (auto &dp : grp.items) {
@@ -281,12 +296,18 @@ void BdrDatapointRegistry::trigger_immediate_repoll_for_node(uint8_t node_id) {
   }
 }
 
-uint8_t BdrDatapointRegistry::get_discovered_level(uint16_t index,
+uint8_t BdrDatapointRegistry::get_discovered_level(uint8_t node_id,
+                                                   uint16_t index,
                                                    uint8_t sub_index) const {
   uint32_t packed_key = (static_cast<uint32_t>(index) << 8) | sub_index;
-  for (uint32_t entry : this->discovered_datapoints_) {
-    if ((entry >> 8) == packed_key) {
-      return static_cast<uint8_t>(entry & 0xFF);
+  for (const auto &snap : this->discovered_snapshots_) {
+    if (snap.node_id != node_id) {
+      continue;
+    }
+    for (uint32_t entry : snap.entries) {
+      if ((entry >> 8) == packed_key) {
+        return static_cast<uint8_t>(entry & 0xFF);
+      }
     }
   }
   return 0;
@@ -297,14 +318,15 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
                                                       const uint8_t *data,
                                                       size_t data_len) {
   if (data_len < 4) {
-    ESP_LOGD(TAG, "Snapshot 0x502B:%02X -> %zu bytes (empty)", sub_index,
-             data_len);
+    ESP_LOGD(TAG, "Snapshot N%u 0x502B:%02X -> %zu bytes (empty)", node_id,
+             sub_index, data_len);
     return;
   }
   uint16_t count =
       static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
   uint16_t parsed = 0;
   uint8_t dp_lvl = ((sub_index - 1) % 5) + 1;
+  auto &node_snap = this->find_or_create_node_snapshot_(node_id);
 
   for (uint16_t k = 0; k < count; k++) {
     size_t off = 4 + static_cast<size_t>(k) * 15;
@@ -339,6 +361,20 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
         bool is_signed = (dp->data_type == BDR_TYPE_I8 ||
                           dp->data_type == BDR_TYPE_I16 ||
                           dp->data_type == BDR_TYPE_I32);
+        // Some extension modules (e.g. Node 4 SCB) pack negative 8/16-bit minimums into
+        // the 32-bit 0x502B slot without sign-extension (e.g. 0x0000F63C for -2500).
+        if (is_signed &&
+            static_cast<int32_t>(raw_min_u) > static_cast<int32_t>(raw_max_u)) {
+          if (dp->data_type == BDR_TYPE_I16 && raw_min_u >= 0x8000UL &&
+              raw_min_u <= 0xFFFFUL) {
+            raw_min_u = static_cast<uint32_t>(
+                static_cast<int32_t>(static_cast<int16_t>(raw_min_u)));
+          } else if (dp->data_type == BDR_TYPE_I8 && raw_min_u >= 0x80UL &&
+                     raw_min_u <= 0xFFUL) {
+            raw_min_u = static_cast<uint32_t>(
+                static_cast<int32_t>(static_cast<int8_t>(raw_min_u)));
+          }
+        }
         bool valid_range = is_signed ? (static_cast<int32_t>(raw_min_u) <
                                         static_cast<int32_t>(raw_max_u))
                                      : (raw_min_u < raw_max_u);
@@ -381,25 +417,27 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
 
     uint32_t packed_key = (static_cast<uint32_t>(dp_idx) << 8) | dp_sub;
     bool exists = false;
-    for (uint32_t existing : this->discovered_datapoints_) {
+    for (uint32_t existing : node_snap.entries) {
       if ((existing >> 8) == packed_key) {
         exists = true;
         break;
       }
     }
     if (!exists) {
-      this->discovered_datapoints_.push_back((packed_key << 8) | dp_lvl);
+      node_snap.entries.push_back((packed_key << 8) | dp_lvl);
     }
     parsed++;
   }
   ESP_LOGI(TAG,
-           "Snapshot 0x502B:%02X -> %u descriptors (%zu bytes, total unique=%zu)",
-           sub_index, parsed, data_len, this->discovered_datapoints_.size());
+           "Snapshot N%u 0x502B:%02X -> %u descriptors (%zu bytes, node unique=%zu)",
+           node_id, sub_index, parsed, data_len, node_snap.entries.size());
 }
 
-void BdrDatapointRegistry::begin_snapshot_logging() {
+void BdrDatapointRegistry::begin_snapshot_logging(uint8_t default_node_id) {
+  this->snapshot_default_node_id_ = default_node_id;
   this->snapshot_logging_active_ = true;
   this->snapshot_header_logged_ = false;
+  this->snapshot_node_log_idx_ = 0;
   this->snapshot_log_cursor_ = 0;
 }
 
@@ -408,41 +446,74 @@ bool BdrDatapointRegistry::log_snapshot_chunk(size_t max_lines) {
     return true;
   }
 
-  if (!this->snapshot_header_logged_) {
-    this->snapshot_header_logged_ = true;
-    ESP_LOGI(TAG,
-             "=== Appliance Snapshot (%zu supported datapoints from 0x502B:01..15) ===",
-             this->discovered_datapoints_.size());
-    if (this->discovered_datapoints_.empty()) {
-      ESP_LOGI(TAG, "=== No 0x502B descriptors returned by appliance ===");
-      this->snapshot_logging_active_ = false;
-      return true;
-    }
+  if (this->discovered_snapshots_.empty()) {
+    ESP_LOGI(TAG, "=== No 0x502B descriptors returned by appliance ===");
+    this->snapshot_logging_active_ = false;
+    return true;
   }
 
   size_t lines_emitted = 0;
-  char line[200];
-  while (this->snapshot_log_cursor_ < this->discovered_datapoints_.size() &&
+  while (this->snapshot_node_log_idx_ < this->discovered_snapshots_.size() &&
          lines_emitted < max_lines) {
-    int pos = snprintf(line, sizeof(line), "BDR_SNAPSHOT:");
-    while (this->snapshot_log_cursor_ < this->discovered_datapoints_.size() &&
-           pos <= 170) {
-      uint32_t entry = this->discovered_datapoints_[this->snapshot_log_cursor_++];
-      uint16_t idx = static_cast<uint16_t>((entry >> 16) & 0xFFFF);
-      uint8_t sub = static_cast<uint8_t>((entry >> 8) & 0xFF);
-      uint8_t lvl = static_cast<uint8_t>(entry & 0xFF);
-      pos += snprintf(line + pos, sizeof(line) - pos, "%s%04X:%02X@%u",
-                      (pos > 13) ? "," : "", idx, sub, lvl);
+    const auto &snap = this->discovered_snapshots_[this->snapshot_node_log_idx_];
+    const bool is_default = (snap.node_id == this->snapshot_default_node_id_);
+
+    if (!this->snapshot_header_logged_) {
+      this->snapshot_header_logged_ = true;
+      if (is_default) {
+        ESP_LOGI(TAG,
+                 "=== Appliance Snapshot (%zu supported datapoints from 0x502B:01..15) ===",
+                 snap.entries.size());
+      } else {
+        ESP_LOGI(TAG,
+                 "=== Appliance Snapshot (Node %u: %zu supported datapoints from 0x502B:01..15) ===",
+                 snap.node_id, snap.entries.size());
+      }
     }
-    if (pos > 13) {
-      ESP_LOGI(TAG, "%s", line);
-      lines_emitted++;
+
+    char prefix[24];
+    int prefix_len = 0;
+    if (is_default) {
+      prefix_len = snprintf(prefix, sizeof(prefix), "BDR_SNAPSHOT:");
+    } else {
+      prefix_len =
+          snprintf(prefix, sizeof(prefix), "BDR_SNAPSHOT[N%u]:", snap.node_id);
+    }
+
+    char line[200];
+    while (this->snapshot_log_cursor_ < snap.entries.size() &&
+           lines_emitted < max_lines) {
+      int pos = snprintf(line, sizeof(line), "%s", prefix);
+      while (this->snapshot_log_cursor_ < snap.entries.size() && pos <= 170) {
+        uint32_t entry = snap.entries[this->snapshot_log_cursor_++];
+        uint16_t idx = static_cast<uint16_t>((entry >> 16) & 0xFFFF);
+        uint8_t sub = static_cast<uint8_t>((entry >> 8) & 0xFF);
+        uint8_t lvl = static_cast<uint8_t>(entry & 0xFF);
+        pos += snprintf(line + pos, sizeof(line) - pos, "%s%04X:%02X@%u",
+                        (pos > prefix_len) ? "," : "", idx, sub, lvl);
+      }
+      if (pos > prefix_len) {
+        ESP_LOGI(TAG, "%s", line);
+        lines_emitted++;
+      }
+    }
+
+    if (this->snapshot_log_cursor_ >= snap.entries.size()) {
+      if (is_default) {
+        ESP_LOGI(
+            TAG,
+            "=== End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===");
+      } else {
+        ESP_LOGI(TAG, "=== End of Appliance Snapshot (Node %u) ===",
+                 snap.node_id);
+      }
+      this->snapshot_node_log_idx_++;
+      this->snapshot_log_cursor_ = 0;
+      this->snapshot_header_logged_ = false;
     }
   }
 
-  if (this->snapshot_log_cursor_ >= this->discovered_datapoints_.size()) {
-    ESP_LOGI(TAG,
-             "=== End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===");
+  if (this->snapshot_node_log_idx_ >= this->discovered_snapshots_.size()) {
     this->snapshot_logging_active_ = false;
     return true;
   }

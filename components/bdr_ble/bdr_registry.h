@@ -130,7 +130,7 @@ class BdrDatapointRegistry {
                                   const uint8_t *data, size_t data_len);
 
   /// Begin chunked BDR_SNAPSHOT logging across loop() ticks
-  void begin_snapshot_logging();
+  void begin_snapshot_logging(uint8_t default_node_id);
   bool is_snapshot_logging_active() const {
     return this->snapshot_logging_active_;
   }
@@ -138,7 +138,8 @@ class BdrDatapointRegistry {
   bool log_snapshot_chunk(size_t max_lines = 2);
 
   /// Return discovered auth level (1..5) from 0x502B if present, else 0
-  uint8_t get_discovered_level(uint16_t index, uint8_t sub_index) const;
+  uint8_t get_discovered_level(uint8_t node_id, uint16_t index,
+                               uint8_t sub_index) const;
 
   void mark_datapoint_unsupported(uint8_t node_id, uint16_t index,
                                   uint8_t sub_index, uint8_t status_code,
@@ -156,10 +157,19 @@ class BdrDatapointRegistry {
   void publish_stale_nan();
 
  protected:
+  struct NodeSnapshot {
+    uint8_t node_id{0x01};
+    std::vector<uint32_t> entries;
+  };
+
+  NodeSnapshot &find_or_create_node_snapshot_(uint8_t node_id);
+
   std::vector<PollGroup> poll_groups_;
-  std::vector<uint32_t> discovered_datapoints_;
+  std::vector<NodeSnapshot> discovered_snapshots_;
+  uint8_t snapshot_default_node_id_{0x01};
   bool snapshot_logging_active_{false};
   bool snapshot_header_logged_{false};
+  size_t snapshot_node_log_idx_{0};
   size_t snapshot_log_cursor_{0};
 };
 

@@ -14,6 +14,7 @@ CONF_NODE_ID = "node_id"
 CONF_AUTH_LEVEL = "auth_level"
 CONF_PIN = "pin"
 CONF_LOG_SNAPSHOT = "log_snapshot"
+CONF_SNAPSHOT_NODES = "snapshot_nodes"
 CONF_PARAMETER = "parameter"
 CONF_SUB_INDEX = "sub_index"
 CONF_SENSORS = "sensors"
@@ -31,6 +32,9 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_AUTH_LEVEL, default=4): cv.int_range(min=0, max=4),
             cv.Optional(CONF_PIN): cv.int_range(min=0, max=999999),
             cv.Optional(CONF_LOG_SNAPSHOT, default=True): cv.boolean,
+            cv.Optional(CONF_SNAPSHOT_NODES): cv.ensure_list(
+                cv.int_range(min=0, max=255)
+            ),
         }
     )
     .extend(ble_client.BLE_CLIENT_SCHEMA)
@@ -45,5 +49,7 @@ async def to_code(config):
     cg.add(var.set_default_node_id(config[CONF_NODE_ID]))
     cg.add(var.set_auth_level(config[CONF_AUTH_LEVEL]))
     cg.add(var.set_log_snapshot(config[CONF_LOG_SNAPSHOT]))
+    for node_id in config.get(CONF_SNAPSHOT_NODES, []):
+        cg.add(var.add_snapshot_node(node_id))
     if CONF_PIN in config:
         cg.add(var.set_pin(config[CONF_PIN]))

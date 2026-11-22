@@ -79,6 +79,14 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t get_default_node_id() const { return this->default_node_id_; }
   void set_auth_level(uint8_t auth_level) { this->auth_level_ = auth_level; }
   void set_log_snapshot(bool log_snapshot) { this->log_snapshot_ = log_snapshot; }
+  void add_snapshot_node(uint8_t node_id) {
+    for (uint8_t existing : this->configured_snapshot_nodes_) {
+      if (existing == node_id) {
+        return;
+      }
+    }
+    this->configured_snapshot_nodes_.push_back(node_id);
+  }
   void set_pin(uint32_t pin) {
     this->pin_ = pin;
     this->has_pin_ = true;
@@ -177,6 +185,8 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
 
   void reset_session_state_(bool clear_writes);
   void reset_active_transaction_();
+  void build_snapshot_nodes_();
+  void advance_snapshot_step_(bool skip_remaining_for_node = false);
   void publish_status_(const char *msg);
   void resolve_gatt_handles_();
   void handle_pairing_failure_(const uint8_t *bda, uint8_t reason);
@@ -230,7 +240,12 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t cccd_step_{0};
   uint8_t retry_count_{0};
   uint8_t consecutive_timeouts_{0};
+  std::vector<uint8_t> configured_snapshot_nodes_;
+  std::vector<uint8_t> active_snapshot_nodes_;
+  size_t snapshot_node_cursor_{0};
   uint8_t snapshot_sub_idx_{1};
+  bool snapshot_node_count_probed_{false};
+  bool snapshot_completed_{false};
 
   uint16_t h_direct_tx_{HANDLE_DIRECT_TX};
   uint16_t h_direct_rx_{HANDLE_DIRECT_RX};

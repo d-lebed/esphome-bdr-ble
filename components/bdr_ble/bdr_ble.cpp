@@ -1180,9 +1180,10 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
         this->state_ == STATE_READING_SNAPSHOT &&
         !this->can_node_probe_done_) {
       if (sub_index == 0) {
-        ESP_LOGD(TAG,
-                 "CAN node probe 0x1F85:00 returned NACK (abort=0x%08X); continuing",
-                 static_cast<unsigned>(abort_code));
+        ESP_LOGI(TAG,
+                 "CAN node probe 0x1F85:00 not available (SDO abort=0x%08X: %s)",
+                 static_cast<unsigned>(abort_code),
+                 sdo_abort_code_str(abort_code));
         this->can_node_probe_done_ = true;
       } else if (sub_index == this->can_probe_sub_idx_) {
         ESP_LOGD(TAG, "CAN node probe 0x1F85:%02X returned NACK (abort=0x%08X)",
@@ -1334,8 +1335,10 @@ void BdrBleComponent::handle_single_read_ack_(uint8_t node_id, uint16_t index,
                  "CAN bus 0x1F85:00 reports %u slots; probing 0x1F85:01..%02X",
                  raw_count, this->can_probe_max_sub_);
       } else {
-        ESP_LOGD(TAG, "CAN bus 0x1F85:00 returned empty/invalid count (len=%zu)",
-                 data_len);
+        uint8_t raw_val = (data_len >= 1) ? data[0] : 0;
+        ESP_LOGI(TAG,
+                 "CAN bus 0x1F85:00 returned %u (len=%zu) — no secondary CAN node list reported",
+                 raw_val, data_len);
         this->can_node_probe_done_ = true;
       }
       return;
@@ -1653,11 +1656,12 @@ void BdrBleComponent::loop() {
       ActiveRequest timed_out = this->active_req_;
       this->reset_active_transaction_();
       if (timed_out.index == INDEX_CAN_VENDOR_ID) {
-        ESP_LOGD(TAG, "CAN node probe 0x1F85:%02X timed out; continuing snapshot",
-                 timed_out.sub_index);
         if (timed_out.sub_index == 0) {
+          ESP_LOGI(TAG, "CAN node probe 0x1F85:00 timed out; continuing snapshot");
           this->can_node_probe_done_ = true;
         } else {
+          ESP_LOGD(TAG, "CAN node probe 0x1F85:%02X timed out; finishing probe",
+                   timed_out.sub_index);
           this->finish_can_node_probe_();
         }
       } else {

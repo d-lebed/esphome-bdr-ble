@@ -8,10 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Multi-Node `0x502B` Snapshot Support, `snapshot_nodes` Option & CAN Bus Node Count Probe (`0x1F85:00`):**
+- **Multi-Node `0x502B` Snapshot Support, `snapshot_nodes` Option & CAN Bus Node Probe (`0x1F85:00..N`):**
   - `STATE_READING_SNAPSHOT` now automatically reads `0x502B:01..15` across every distinct CAN `node_id` configured in YAML (defaulting to the hub's `node_id:` only when no secondary node entities are configured), giving secondary nodes (such as `node_id: 4` SCB extension boards) full `expected_len`, `number` limits, `select` option filtering, and per-node `BDR_SNAPSHOT[N4]:` log output, with fast bailout if a secondary node does not respond to `0x502B:01`.
   - Added optional `snapshot_nodes:` list on `bdr_ble:` (e.g. `snapshot_nodes: [1, 4]`) to scan additional CAN nodes during discovery before configuring entities on them.
-  - When `log_snapshot: true`, performs a single lightweight read of CANopen `0x1F85:00` (`canVendorIdentification` SubIndex `0`) on connect and logs the reported CAN bus node count so users can see whether secondary CAN nodes (e.g. Node `3..N`) exist.
+  - When `log_snapshot: true`, probes CANopen `0x1F85:00` (`canVendorIdentification` entry count) and `0x1F85:01..N` (capped at 16 slots) locally on the default node at connect time and logs the exact list of present CAN node IDs (and a configuration hint when secondary nodes are detected).
 - **NVS Flash Persistence for Learned `0x502B` Limits (`number` & `select`):**
   - `BdrBleNumber` and `BdrBleSelect` now persist learned `0x502B` hardware limits (`min`/`max`/`step` for `number`, allowed `[raw_min..raw_max]` bounds for `select`) to ESP32 NVS flash (`ESPPreferenceObject`, written only when values change) and restore them in `setup()` (`setup_priority::DATA`) before Home Assistant connects to the Native API.
   - Added optional `device_limits: true/false` (default `true`) per entity on `number:` and `select:` so users can opt out when enforcing custom manual YAML bounds or full enum option lists.

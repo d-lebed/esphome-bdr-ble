@@ -31,7 +31,7 @@ bdr_ble:
   pin: !secret strateo_ble_pin
   node_id: 1
   auth_level: 4
-  # log_snapshot: false        # Optional: suppress BDR_SNAPSHOT lines & 0x1F85:00 CAN node count probe on connect (default: true)
+  # log_snapshot: false        # Optional: suppress BDR_SNAPSHOT lines & 0x1F85:00..N CAN node probe on connect (default: true)
   # snapshot_nodes: [1, 4]     # Optional: scan 0x502B on additional CAN nodes (default: configured node_ids only)
 
 switch:

@@ -186,6 +186,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void reset_session_state_(bool clear_writes);
   void reset_active_transaction_();
   void build_snapshot_nodes_();
+  void finish_can_node_probe_();
   void advance_snapshot_step_(bool skip_remaining_for_node = false);
   void publish_status_(const char *msg);
   void resolve_gatt_handles_();
@@ -242,9 +243,12 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t consecutive_timeouts_{0};
   std::vector<uint8_t> configured_snapshot_nodes_;
   std::vector<uint8_t> active_snapshot_nodes_;
+  std::vector<uint8_t> detected_can_nodes_;
   size_t snapshot_node_cursor_{0};
   uint8_t snapshot_sub_idx_{1};
-  bool snapshot_node_count_probed_{false};
+  uint8_t can_probe_sub_idx_{0};
+  uint8_t can_probe_max_sub_{0};
+  bool can_node_probe_done_{false};
   bool snapshot_completed_{false};
 
   uint16_t h_direct_tx_{HANDLE_DIRECT_TX};

@@ -361,19 +361,18 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
         bool is_signed = (dp->data_type == BDR_TYPE_I8 ||
                           dp->data_type == BDR_TYPE_I16 ||
                           dp->data_type == BDR_TYPE_I32);
-        // Some extension modules (e.g. Node 4 SCB) pack negative 8/16-bit minimums into
-        // the 32-bit 0x502B slot without sign-extension (e.g. 0x0000F63C for -2500).
-        if (is_signed &&
-            static_cast<int32_t>(raw_min_u) > static_cast<int32_t>(raw_max_u)) {
-          if (dp->data_type == BDR_TYPE_I16 && raw_min_u >= 0x8000UL &&
-              raw_min_u <= 0xFFFFUL) {
-            raw_min_u = static_cast<uint32_t>(
-                static_cast<int32_t>(static_cast<int16_t>(raw_min_u)));
-          } else if (dp->data_type == BDR_TYPE_I8 && raw_min_u >= 0x80UL &&
-                     raw_min_u <= 0xFFUL) {
-            raw_min_u = static_cast<uint32_t>(
-                static_cast<int32_t>(static_cast<int8_t>(raw_min_u)));
-          }
+        // Signed 8/16-bit bounds in 0x502B may be zero-extended in the 32-bit slot
+        // (e.g. 0x0000F63C for -2500 on Node 4 SCB); always sign-extend by wire width.
+        if (dp->data_type == BDR_TYPE_I16) {
+          raw_min_u = static_cast<uint32_t>(
+              static_cast<int32_t>(static_cast<int16_t>(raw_min_u)));
+          raw_max_u = static_cast<uint32_t>(
+              static_cast<int32_t>(static_cast<int16_t>(raw_max_u)));
+        } else if (dp->data_type == BDR_TYPE_I8) {
+          raw_min_u = static_cast<uint32_t>(
+              static_cast<int32_t>(static_cast<int8_t>(raw_min_u)));
+          raw_max_u = static_cast<uint32_t>(
+              static_cast<int32_t>(static_cast<int8_t>(raw_max_u)));
         }
         bool valid_range = is_signed ? (static_cast<int32_t>(raw_min_u) <
                                         static_cast<int32_t>(raw_max_u))

@@ -59,8 +59,10 @@ inline constexpr uint8_t RUB_FUNC_CHALLENGE_RESP = 0x01;
 inline constexpr uint8_t RUB_FUNC_AUTH_REQ = 0x02;
 inline constexpr uint8_t RUB_FUNC_AUTH_ACK = 0x03;
 
-// CANopen CiA 302 NMT master vendor table (SubIndex 0 = count, SubIndex 1..N = vendor ID per node)
+// CANopen NMT node count (0x1F85:00) & per-node hardware type (0x2001:02 parApDeviceInfoType)
 inline constexpr uint16_t INDEX_CAN_VENDOR_ID = 0x1F85;
+inline constexpr uint16_t INDEX_DEVICE_INFO = 0x2001;
+inline constexpr uint8_t SUBINDEX_DEVICE_INFO_TYPE = 0x02;
 inline constexpr uint8_t MAX_CAN_NODE_PROBE = 16;
 
 // Dynamic appliance menu descriptor table index (SubIndex 1..15)

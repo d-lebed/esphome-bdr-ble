@@ -47,6 +47,11 @@ struct PendingReadback {
   uint8_t sub_index{0};
 };
 
+struct DetectedCanNode {
+  uint8_t node_id{0};
+  uint16_t device_type{0};
+};
+
 enum class RequestKind : uint8_t {
   NONE = 0,
   SNAPSHOT,
@@ -186,6 +191,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void reset_session_state_(bool clear_writes);
   void reset_active_transaction_();
   void build_snapshot_nodes_();
+  void advance_can_node_probe_();
   void finish_can_node_probe_();
   void advance_snapshot_step_(bool skip_remaining_for_node = false);
   void publish_status_(const char *msg);
@@ -243,11 +249,13 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t consecutive_timeouts_{0};
   std::vector<uint8_t> configured_snapshot_nodes_;
   std::vector<uint8_t> active_snapshot_nodes_;
-  std::vector<uint8_t> detected_can_nodes_;
+  std::vector<uint8_t> can_probe_queue_;
+  std::vector<DetectedCanNode> detected_can_nodes_;
   size_t snapshot_node_cursor_{0};
   uint8_t snapshot_sub_idx_{1};
-  uint8_t can_probe_sub_idx_{0};
-  uint8_t can_probe_max_sub_{0};
+  size_t can_probe_cursor_{0};
+  uint8_t can_probe_reported_count_{0};
+  bool can_node_count_probed_{false};
   bool can_node_probe_done_{false};
   bool snapshot_completed_{false};
 

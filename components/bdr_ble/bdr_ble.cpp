@@ -86,34 +86,41 @@ void BdrBleComponent::build_snapshot_nodes_() {
   }
 }
 
+void BdrBleComponent::advance_can_node_probe_() {
+  this->can_probe_cursor_++;
+  if (this->can_probe_cursor_ >= this->can_probe_queue_.size()) {
+    this->finish_can_node_probe_();
+  }
+}
+
 void BdrBleComponent::finish_can_node_probe_() {
   this->can_node_probe_done_ = true;
   if (this->detected_can_nodes_.empty()) {
-    if (this->can_probe_max_sub_ > 0) {
+    if (this->can_probe_reported_count_ > 0) {
       ESP_LOGI(
           TAG,
-          "CAN bus 0x1F85:00 reported %u entries, no non-zero vendor IDs in 0x1F85:01..%02X",
-          this->can_probe_max_sub_, this->can_probe_max_sub_);
+          "CAN bus 0x1F85:00 reported %u nodes, no devices replied to 0x2001:02",
+          this->can_probe_reported_count_);
     }
     return;
   }
 
-  char nbuf[96];
+  char nbuf[160];
   int npos = 0;
   uint8_t first_secondary = 0;
   bool has_node4 = false;
   for (size_t i = 0;
        i < this->detected_can_nodes_.size() &&
-       npos < static_cast<int>(sizeof(nbuf)) - 6;
+       npos < static_cast<int>(sizeof(nbuf)) - 20;
        i++) {
-    uint8_t n = this->detected_can_nodes_[i];
-    npos += snprintf(nbuf + npos, sizeof(nbuf) - npos, "%s%u",
-                     (i > 0) ? ", " : "", n);
-    if (n != this->default_node_id_) {
+    const auto &node = this->detected_can_nodes_[i];
+    npos += snprintf(nbuf + npos, sizeof(nbuf) - npos, "%s%u (type=%u)",
+                     (i > 0) ? ", " : "", node.node_id, node.device_type);
+    if (node.node_id != this->default_node_id_) {
       if (first_secondary == 0) {
-        first_secondary = n;
+        first_secondary = node.node_id;
       }
-      if (n == 4) {
+      if (node.node_id == 4) {
         has_node4 = true;
       }
     }
@@ -123,15 +130,15 @@ void BdrBleComponent::finish_can_node_probe_() {
     uint8_t example_secondary = has_node4 ? 4 : first_secondary;
     ESP_LOGI(
         TAG,
-        "CAN bus nodes present (0x1F85:01..%02X): [%s] — secondary node(s) detected; "
+        "CAN bus nodes present (0x1F85:00=%u): [%s] — secondary node(s) detected; "
         "add snapshot_nodes: [%u, %u] or per-entity node_id: to inspect/poll them",
-        this->can_probe_max_sub_, nbuf, this->default_node_id_,
+        this->can_probe_reported_count_, nbuf, this->default_node_id_,
         example_secondary);
   } else {
     ESP_LOGI(
         TAG,
-        "CAN bus nodes present (0x1F85:01..%02X): [%s] (no secondary nodes detected)",
-        this->can_probe_max_sub_, nbuf);
+        "CAN bus nodes present (0x1F85:00=%u): [%s] (no secondary nodes detected)",
+        this->can_probe_reported_count_, nbuf);
   }
 }
 
@@ -755,9 +762,11 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->get_list_stage_ = 0;
         this->snapshot_node_cursor_ = 0;
         this->snapshot_sub_idx_ = 1;
-        this->can_probe_sub_idx_ = 0;
-        this->can_probe_max_sub_ = 0;
+        this->can_probe_cursor_ = 0;
+        this->can_probe_reported_count_ = 0;
+        this->can_node_count_probed_ = false;
         this->can_node_probe_done_ = false;
+        this->can_probe_queue_.clear();
         this->detected_can_nodes_.clear();
         this->snapshot_completed_ = false;
         this->build_snapshot_nodes_();
@@ -1116,9 +1125,11 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
       this->state_ = STATE_READING_SNAPSHOT;
       this->snapshot_node_cursor_ = 0;
       this->snapshot_sub_idx_ = 1;
-      this->can_probe_sub_idx_ = 0;
-      this->can_probe_max_sub_ = 0;
+      this->can_probe_cursor_ = 0;
+      this->can_probe_reported_count_ = 0;
+      this->can_node_count_probed_ = !this->log_snapshot_;
       this->can_node_probe_done_ = !this->log_snapshot_;
+      this->can_probe_queue_.clear();
       this->detected_can_nodes_.clear();
       this->build_snapshot_nodes_();
     } else {
@@ -1176,27 +1187,28 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
                    (static_cast<uint32_t>(payload[12]) << 16) |
                    (static_cast<uint32_t>(payload[13]) << 24);
     }
-    if (index == INDEX_CAN_VENDOR_ID &&
-        this->state_ == STATE_READING_SNAPSHOT &&
-        !this->can_node_probe_done_) {
-      if (sub_index == 0) {
+    if (this->state_ == STATE_READING_SNAPSHOT && !this->can_node_probe_done_) {
+      if (index == INDEX_CAN_VENDOR_ID && sub_index == 0 &&
+          !this->can_node_count_probed_) {
         ESP_LOGI(TAG,
                  "CAN node probe 0x1F85:00 not available (SDO abort=0x%08X: %s)",
                  static_cast<unsigned>(abort_code),
                  sdo_abort_code_str(abort_code));
+        this->can_node_count_probed_ = true;
         this->can_node_probe_done_ = true;
-      } else if (sub_index == this->can_probe_sub_idx_) {
-        ESP_LOGD(TAG, "CAN node probe 0x1F85:%02X returned NACK (abort=0x%08X)",
-                 sub_index, static_cast<unsigned>(abort_code));
-        if (abort_code == SDO_ABORT_SUBINDEX_NOT_EXIST ||
-            abort_code == SDO_ABORT_OBJECT_NOT_EXIST ||
-            this->can_probe_sub_idx_ >= this->can_probe_max_sub_) {
-          this->finish_can_node_probe_();
-        } else {
-          this->can_probe_sub_idx_++;
-        }
+        return;
       }
-      return;
+      if (index == INDEX_DEVICE_INFO &&
+          sub_index == SUBINDEX_DEVICE_INFO_TYPE &&
+          this->can_node_count_probed_ &&
+          this->can_probe_cursor_ < this->can_probe_queue_.size() &&
+          node_id == this->can_probe_queue_[this->can_probe_cursor_]) {
+        ESP_LOGD(TAG,
+                 "CAN node %u not present / NACK on 0x2001:02 (abort=0x%08X)",
+                 node_id, static_cast<unsigned>(abort_code));
+        this->advance_can_node_probe_();
+        return;
+      }
     }
     if (index == INDEX_AP_MENU_DESCRIPTOR) {
       ESP_LOGD(TAG, "Snapshot N%u 0x502B:%02X -> empty/NACK (abort=0x%08X)",
@@ -1322,18 +1334,27 @@ void BdrBleComponent::handle_single_read_ack_(uint8_t node_id, uint16_t index,
                                               uint8_t sub_index,
                                               const uint8_t *data,
                                               size_t data_len) {
-  if (index == INDEX_CAN_VENDOR_ID &&
-      this->state_ == STATE_READING_SNAPSHOT &&
-      !this->can_node_probe_done_) {
-    if (sub_index == 0 && this->can_probe_sub_idx_ == 0) {
+  if (this->state_ == STATE_READING_SNAPSHOT && !this->can_node_probe_done_) {
+    if (index == INDEX_CAN_VENDOR_ID && sub_index == 0 &&
+        !this->can_node_count_probed_) {
+      this->can_node_count_probed_ = true;
       if (data_len >= 1 && data[0] > 0 && data[0] != 0xFF) {
         uint8_t raw_count = data[0];
-        this->can_probe_max_sub_ =
+        uint8_t max_node =
             (raw_count > MAX_CAN_NODE_PROBE) ? MAX_CAN_NODE_PROBE : raw_count;
-        this->can_probe_sub_idx_ = 1;
+        this->can_probe_reported_count_ = raw_count;
+        this->can_probe_queue_.clear();
+        this->detected_can_nodes_.clear();
+        this->can_probe_queue_.push_back(this->default_node_id_);
+        for (uint8_t n = 3; n <= max_node; n++) {
+          if (n != this->default_node_id_) {
+            this->can_probe_queue_.push_back(n);
+          }
+        }
+        this->can_probe_cursor_ = 0;
         ESP_LOGD(TAG,
-                 "CAN bus 0x1F85:00 reports %u slots; probing 0x1F85:01..%02X",
-                 raw_count, this->can_probe_max_sub_);
+                 "CAN bus 0x1F85:00 reports %u nodes; probing 0x2001:02 on %zu candidate(s)",
+                 raw_count, this->can_probe_queue_.size());
       } else {
         uint8_t raw_val = (data_len >= 1) ? data[0] : 0;
         ESP_LOGI(TAG,
@@ -1343,36 +1364,22 @@ void BdrBleComponent::handle_single_read_ack_(uint8_t node_id, uint16_t index,
       }
       return;
     }
-    if (sub_index >= 1 && sub_index == this->can_probe_sub_idx_) {
-      uint32_t vendor_id = 0;
-      if (data_len >= 4) {
-        vendor_id = static_cast<uint32_t>(data[0]) |
-                    (static_cast<uint32_t>(data[1]) << 8) |
-                    (static_cast<uint32_t>(data[2]) << 16) |
-                    (static_cast<uint32_t>(data[3]) << 24);
-      } else if (data_len >= 2) {
-        vendor_id = static_cast<uint32_t>(data[0]) |
-                    (static_cast<uint32_t>(data[1]) << 8);
+    if (index == INDEX_DEVICE_INFO &&
+        sub_index == SUBINDEX_DEVICE_INFO_TYPE &&
+        this->can_node_count_probed_ &&
+        this->can_probe_cursor_ < this->can_probe_queue_.size() &&
+        node_id == this->can_probe_queue_[this->can_probe_cursor_]) {
+      uint16_t dev_type = 0;
+      if (data_len >= 2) {
+        dev_type = static_cast<uint16_t>(data[0]) |
+                   (static_cast<uint16_t>(data[1]) << 8);
       } else if (data_len == 1) {
-        vendor_id = data[0];
+        dev_type = data[0];
       }
-      bool is_present = (vendor_id != 0) &&
-                        !(data_len >= 4 && vendor_id == 0xFFFFFFFFUL) &&
-                        !(data_len == 2 && vendor_id == 0xFFFFU) &&
-                        !(data_len == 1 && vendor_id == 0xFFU);
-      if (is_present) {
-        this->detected_can_nodes_.push_back(sub_index);
-        ESP_LOGD(TAG, "CAN node %u present (0x1F85:%02X = 0x%08X)", sub_index,
-                 sub_index, static_cast<unsigned>(vendor_id));
-      } else {
-        ESP_LOGD(TAG, "CAN node %u empty (0x1F85:%02X = 0x%08X)", sub_index,
-                 sub_index, static_cast<unsigned>(vendor_id));
-      }
-      if (this->can_probe_sub_idx_ >= this->can_probe_max_sub_) {
-        this->finish_can_node_probe_();
-      } else {
-        this->can_probe_sub_idx_++;
-      }
+      this->detected_can_nodes_.push_back({node_id, dev_type});
+      ESP_LOGD(TAG, "CAN node %u present (0x2001:02 type=%u)", node_id,
+               dev_type);
+      this->advance_can_node_probe_();
       return;
     }
   }
@@ -1655,15 +1662,16 @@ void BdrBleComponent::loop() {
         (now - this->active_req_.last_activity_ms >= REQUEST_TIMEOUT_MS)) {
       ActiveRequest timed_out = this->active_req_;
       this->reset_active_transaction_();
-      if (timed_out.index == INDEX_CAN_VENDOR_ID) {
-        if (timed_out.sub_index == 0) {
-          ESP_LOGI(TAG, "CAN node probe 0x1F85:00 timed out; continuing snapshot");
-          this->can_node_probe_done_ = true;
-        } else {
-          ESP_LOGD(TAG, "CAN node probe 0x1F85:%02X timed out; finishing probe",
-                   timed_out.sub_index);
-          this->finish_can_node_probe_();
-        }
+      if (timed_out.index == INDEX_CAN_VENDOR_ID && timed_out.sub_index == 0) {
+        ESP_LOGI(TAG, "CAN node probe 0x1F85:00 timed out; continuing snapshot");
+        this->can_node_count_probed_ = true;
+        this->can_node_probe_done_ = true;
+      } else if (timed_out.index == INDEX_DEVICE_INFO &&
+                 timed_out.sub_index == SUBINDEX_DEVICE_INFO_TYPE &&
+                 !this->can_node_probe_done_) {
+        ESP_LOGD(TAG, "CAN node %u timed out on 0x2001:02; advancing",
+                 timed_out.node_id);
+        this->advance_can_node_probe_();
       } else {
         bool skip_node =
             (timed_out.sub_index == 1 &&
@@ -1683,14 +1691,29 @@ void BdrBleComponent::loop() {
         !this->transport_.is_tx_in_progress() &&
         (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
       if (this->log_snapshot_ && !this->can_node_probe_done_) {
-        if (this->send_read_param_(this->default_node_id_, INDEX_CAN_VENDOR_ID,
-                                   this->can_probe_sub_idx_)) {
-          this->active_req_.kind = RequestKind::SNAPSHOT;
-          this->active_req_.node_id = this->default_node_id_;
-          this->active_req_.index = INDEX_CAN_VENDOR_ID;
-          this->active_req_.sub_index = this->can_probe_sub_idx_;
-          this->active_req_.started_ms = now;
-          this->active_req_.last_activity_ms = now;
+        if (!this->can_node_count_probed_) {
+          if (this->send_read_param_(this->default_node_id_,
+                                     INDEX_CAN_VENDOR_ID, 0x00)) {
+            this->active_req_.kind = RequestKind::SNAPSHOT;
+            this->active_req_.node_id = this->default_node_id_;
+            this->active_req_.index = INDEX_CAN_VENDOR_ID;
+            this->active_req_.sub_index = 0x00;
+            this->active_req_.started_ms = now;
+            this->active_req_.last_activity_ms = now;
+          }
+        } else if (this->can_probe_cursor_ < this->can_probe_queue_.size()) {
+          uint8_t probe_node = this->can_probe_queue_[this->can_probe_cursor_];
+          if (this->send_read_param_(probe_node, INDEX_DEVICE_INFO,
+                                     SUBINDEX_DEVICE_INFO_TYPE)) {
+            this->active_req_.kind = RequestKind::SNAPSHOT;
+            this->active_req_.node_id = probe_node;
+            this->active_req_.index = INDEX_DEVICE_INFO;
+            this->active_req_.sub_index = SUBINDEX_DEVICE_INFO_TYPE;
+            this->active_req_.started_ms = now;
+            this->active_req_.last_activity_ms = now;
+          }
+        } else {
+          this->finish_can_node_probe_();
         }
       } else if (this->snapshot_node_cursor_ <
                  this->active_snapshot_nodes_.size()) {

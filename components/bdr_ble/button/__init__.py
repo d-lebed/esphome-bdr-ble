@@ -7,7 +7,6 @@ from typing import Any
 import esphome.codegen as cg
 from esphome.components import button
 import esphome.config_validation as cv
-from esphome.const import ENTITY_CATEGORY_DIAGNOSTIC
 
 from .. import CONF_BDR_BLE_ID, BdrBleComponent, bdr_ble_ns
 
@@ -24,7 +23,6 @@ BdrBleDiscoverButton = bdr_ble_ns.class_(
 _DISCOVER_BUTTON_SCHEMA = button.button_schema(
     BdrBleDiscoverButton,
     icon="mdi:radar",
-    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
 )
 
 _SINGLE_BUTTON_SCHEMA = _DISCOVER_BUTTON_SCHEMA.extend(

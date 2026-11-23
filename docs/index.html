@@ -1031,7 +1031,7 @@ button:
 
         <h3 data-i18n="cfg_button_title">8. On-Demand Discovery (<code>button</code> &amp; <code>bdr_ble.discover</code> Action)</h3>
         <p data-i18n="cfg_button_desc">
-          Triggers an on-demand CAN bus node scan (<code>0x1F85:00</code> + <code>0x2001:02</code>) and logs <code>BDR_SNAPSHOT:</code> / <code>BDR_SNAPSHOT[N&lt;id&gt;]:</code> for every detected node, instead of dumping snapshots on every BLE reconnect. Can be configured as a diagnostic <code>button</code> entity or invoked from any ESPHome automation via <code>bdr_ble.discover</code>:
+          Triggers an on-demand CAN bus node scan (<code>0x1F85:00</code> + <code>0x2001:02</code>) and logs <code>BDR_SNAPSHOT:</code> / <code>BDR_SNAPSHOT[N&lt;id&gt;]:</code> for every detected node, instead of dumping snapshots on every BLE reconnect. Can be configured as a <code>button</code> entity or invoked from any ESPHome automation via <code>bdr_ble.discover</code>:
         </p>
         <pre><code>button:
   - platform: bdr_ble

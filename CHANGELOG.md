@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **On-Demand CAN Node & `0x502B` Discovery (`button` Platform & `bdr_ble.discover` Action):**
-  - Added `components/bdr_ble/button/` (`button: platform: bdr_ble`, `entity_category: diagnostic`) and the `bdr_ble.discover` ESPHome automation action (plus `BdrBleComponent::start_discovery()`).
+  - Added `components/bdr_ble/button/` (`button: platform: bdr_ble`) and the `bdr_ble.discover` ESPHome automation action (plus `BdrBleComponent::start_discovery()`).
   - Triggering discovery probes CANopen `0x1F85:00` (node count `N`) and `0x2001:02` (`parApDeviceInfoType`) on the default node and slave nodes `3..min(N, 16)`, logs all responding CAN node IDs with hardware type codes, automatically reads `0x502B` across **every** detected node, and outputs chunked `BDR_SNAPSHOT:` / `BDR_SNAPSHOT[N<id>]:` log lines on demand instead of dumping on every BLE reconnect.
 - **Official-Sequence `0x502C` → `0x502D` Menu Structure Selection & Multi-Node `0x502B` Limits:**
   - Before reading `0x502B` on each CAN node, `bdr_ble` now reads `0x502C:00` (`varApSupportedMenuStructure`), verifies V2 (`0x02`) support, and writes `0x502D:00 = 0x02` (`varApUsedMenuStructureVersion`), preventing `0x08000000` (General Error) rejections on cold-rebooted controllers (such as Confida 40).

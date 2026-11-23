@@ -88,11 +88,26 @@ inline constexpr uint32_t REQUEST_TIMEOUT_MS = 4000;
 inline constexpr uint32_t POST_TIMEOUT_COOLDOWN_MS = 500;
 inline constexpr uint32_t AUTH_COOLDOWN_MS = 30000;
 inline constexpr uint32_t PAIRING_TIMEOUT_MS = 30000;
+inline constexpr uint32_t CLOSE_TIMEOUT_MS = 5000;
+inline constexpr uint32_t RX_WATCHDOG_MIN_MS = 180000;
 inline constexpr uint32_t DISCONNECT_STALE_TIMEOUT_MS = 90000;
 inline constexpr uint32_t PAIRING_BACKOFF_SECONDS[4] = {90, 180, 300, 600};
 inline constexpr uint32_t MIN_TX_INTERVAL_MS = 60;
 inline constexpr size_t MAX_WRITE_QUEUE_SIZE = 16;
 inline constexpr uint8_t MAX_CONSECUTIVE_TIMEOUTS = 10;
+inline constexpr uint8_t MAX_TX_STALLS = 3;
+
+/// Compute the dynamic RX liveness watchdog timeout (ms) from the shortest active poll interval.
+/// Returns 0 when no supported datapoints are configured (e.g. discovery-only configs).
+inline constexpr uint32_t compute_rx_watchdog_ms(uint32_t min_poll_interval_ms) {
+  if (min_poll_interval_ms == 0) {
+    return 0;
+  }
+  uint32_t scaled = (min_poll_interval_ms > 900000UL)
+                        ? 3630000UL
+                        : (min_poll_interval_ms * 4UL + 30000UL);
+  return (scaled < RX_WATCHDOG_MIN_MS) ? RX_WATCHDOG_MIN_MS : scaled;
+}
 
 // Standard CANopen SDO Abort codes
 inline constexpr uint32_t SDO_ABORT_TOGGLE_BIT = 0x05030000UL;

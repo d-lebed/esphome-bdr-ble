@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added component-specific `USE_BDR_BLE_NUMBER` and `USE_BDR_BLE_SELECT` compile defines so configuring an unrelated ESPHome `number:` or `select:` platform alongside `bdr_ble` never breaks header inclusion.
 
 ### Fixed
+- **Active BLE Link Recovery, Dynamic RX Liveness Watchdog & PIN-Less GATT Discovery Timeout:**
+  - Added clean GATT disconnect recovery (`STATE_CLOSING` via `BLEClientBase::disconnect()` with a 5 s fallback) so stalled `STATE_AUTH_FAILED` sessions, repeated multi-fragment TX stalls, silent zombie BLE links, and consecutive timeouts persisting past RUB re-authentication force a clean BLE reconnect instead of looping indefinitely on a wedged GATT connection.
+  - Added a dynamic `STATE_READY` RX liveness watchdog (`max(180 s, 4 * shortest_poll_interval + 30 s)`, automatically disabled when no polled datapoints are active) to detect silent links without false positives on slow-polling or discovery-only configs.
+  - Prevented GATT service discovery timeouts in PIN-less `GTW-IoT` mode (or after encryption has already succeeded) from triggering `handle_pairing_failure_()` and its 90 s BLE pairing lockout.
 - **4 kB DirectChannel RX Reassembly Limit:**
   - Raised `DirectChannelTransport::MAX_RX_REASSEMBLY_LEN` from `2048` to `4096` bytes so large `0x502B` descriptor blocks (>2 kB, e.g. ~2.3 kB / 148 entries on Node 4) are no longer dropped during reassembly.
 - **Un-Sign-Extended Negative Minimums in `0x502B` Descriptors:**

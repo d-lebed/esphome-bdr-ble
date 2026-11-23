@@ -60,6 +60,42 @@ void BdrBleComponent::reset_active_transaction_() {
   this->active_req_ = {};
 }
 
+void BdrBleComponent::force_disconnect_(const char *reason) {
+  if (this->state_ == STATE_DISCONNECTED || this->state_ == STATE_CLOSING) {
+    return;
+  }
+  ESP_LOGW(TAG, "Forcing BLE disconnect (%s)", reason);
+  this->publish_status_(reason);
+  this->reset_session_state_(true);
+  this->discovery_mode_ = false;
+  this->pending_discovery_ = false;
+  this->state_ = STATE_CLOSING;
+  this->last_action_ms_ = millis();
+  if (this->parent() != nullptr) {
+    this->parent()->disconnect();
+  }
+}
+
+uint32_t BdrBleComponent::shortest_active_poll_interval_ms_() const {
+  uint32_t min_ms = 0;
+  for (const auto &grp : this->registry_.groups()) {
+    if (grp.interval_ms == 0) {
+      continue;
+    }
+    bool has_supported = false;
+    for (const auto &dp : grp.items) {
+      if (!dp.unsupported) {
+        has_supported = true;
+        break;
+      }
+    }
+    if (has_supported && (min_ms == 0 || grp.interval_ms < min_ms)) {
+      min_ms = grp.interval_ms;
+    }
+  }
+  return min_ms;
+}
+
 void BdrBleComponent::add_unique_snapshot_node_(uint8_t node_id) {
   for (uint8_t existing : this->active_snapshot_nodes_) {
     if (existing == node_id) {
@@ -114,7 +150,7 @@ void BdrBleComponent::begin_snapshot_scan_(bool discovery) {
 
 void BdrBleComponent::start_discovery() {
   if (this->state_ == STATE_DISCONNECTED || this->state_ == STATE_AUTH_FAILED ||
-      this->pairing_failed_) {
+      this->state_ == STATE_CLOSING || this->pairing_failed_) {
     ESP_LOGW(TAG,
              "Cannot start CAN discovery: BLE session not connected (state=%u)",
              static_cast<unsigned>(this->state_));
@@ -242,6 +278,7 @@ void BdrBleComponent::reset_session_state_(bool clear_writes) {
   this->cccd_step_ = 0;
   this->retry_count_ = 0;
   this->consecutive_timeouts_ = 0;
+  this->tx_stall_count_ = 0;
   this->cooldown_until_ms_ = 0;
   this->pending_readback_ = {};
   this->pending_rub_auth_tx_ = false;
@@ -340,7 +377,7 @@ bool BdrBleComponent::queue_write_datapoint(uint8_t node_id, uint16_t index,
                                             uint8_t sub_index,
                                             const std::vector<uint8_t> &data) {
   if (this->state_ == STATE_DISCONNECTED || this->state_ == STATE_AUTH_FAILED ||
-      this->pairing_failed_) {
+      this->state_ == STATE_CLOSING || this->pairing_failed_) {
     ESP_LOGW(TAG, "Cannot write 0x%04X:%02X: BLE session not connected (state=%u)",
              index, sub_index, static_cast<unsigned>(this->state_));
     return false;
@@ -860,8 +897,11 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->build_configured_snapshot_nodes_();
         this->negotiated_mtu_ = 23;
         this->reset_session_state_(false);
+        this->rub_recovery_attempts_ = 0;
         this->registry_.on_connect();
-        this->last_action_ms_ = millis();
+        const uint32_t open_now = millis();
+        this->last_action_ms_ = open_now;
+        this->last_rx_ms_ = open_now;
         if (this->has_pin_) {
           this->publish_status_("Connected (pairing...)");
           if (this->parent() != nullptr) {
@@ -904,8 +944,11 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
           ESP_LOGW(TAG, "DirectChannel GATT write failed: status=0x%02X",
                    param->write.status);
           this->transport_.reset_tx();
-        } else if (this->transport_.is_tx_in_progress()) {
-          this->send_next_tx_fragment_();
+        } else {
+          this->tx_stall_count_ = 0;
+          if (this->transport_.is_tx_in_progress()) {
+            this->send_next_tx_fragment_();
+          }
         }
       }
       break;
@@ -1135,6 +1178,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
   if (payload == nullptr || len < 6) {
     return;
   }
+  this->last_rx_ms_ = millis();
   const uint8_t msg_type = payload[3];
   const uint8_t func = payload[4];
 
@@ -1211,6 +1255,8 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
       } else {
         this->publish_status_("Ready");
         this->state_ = STATE_READY;
+        this->last_rx_ms_ = this->last_action_ms_;
+        this->tx_stall_count_ = 0;
       }
     } else {
       this->publish_status_("CAN-BUS Auth Rejected");
@@ -1233,6 +1279,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
         this->active_req_.sub_index == sub_index) {
       this->active_req_ = {};
       this->consecutive_timeouts_ = 0;
+      this->rub_recovery_attempts_ = 0;
     }
     this->stale_published_ = false;
     this->handle_single_read_ack_(node_id, index, sub_index, payload + 10,
@@ -1255,6 +1302,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
       matched_req = true;
       this->active_req_ = {};
       this->consecutive_timeouts_ = 0;
+      this->rub_recovery_attempts_ = 0;
     }
     if (!matched_req) {
       return;
@@ -1380,6 +1428,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     }
     this->active_req_ = {};
     this->consecutive_timeouts_ = 0;
+    this->rub_recovery_attempts_ = 0;
     ESP_LOGI(TAG, "Write ACK for 0x%04X:%02X; reading back value", index,
              sub_index);
     this->pending_readback_ = {true, node_id, index, sub_index};
@@ -1430,6 +1479,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     }
     this->active_req_ = {};
     this->consecutive_timeouts_ = 0;
+    this->rub_recovery_attempts_ = 0;
     ESP_LOGW(TAG,
              "Write NACK for 0x%04X:%02X (SDO abort=0x%08X: %s); reading back hardware state",
              index, sub_index, static_cast<unsigned>(abort_code),
@@ -1465,6 +1515,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
 
     this->active_req_ = {};
     this->consecutive_timeouts_ = 0;
+    this->rub_recovery_attempts_ = 0;
     this->get_list_stage_ = 2;  // Confirmed working!
     this->stale_published_ = false;
     this->handle_get_list_response_(payload, len);
@@ -1743,20 +1794,44 @@ void BdrBleComponent::loop() {
     return;
   }
 
+  if (this->state_ == STATE_CLOSING) {
+    if (now - this->last_action_ms_ >= CLOSE_TIMEOUT_MS) {
+      ESP_LOGW(TAG,
+               "BLE disconnect event timed out after %ums; resetting local state",
+               static_cast<unsigned>(CLOSE_TIMEOUT_MS));
+      this->state_ = STATE_DISCONNECTED;
+      this->gatt_search_completed_ = false;
+      this->ble_sec_ready_ = false;
+      this->discovery_mode_ = false;
+      this->pending_discovery_ = false;
+      this->disconnected_since_ms_ = (now == 0) ? 1 : now;
+      this->reset_session_state_(true);
+      if (!this->pairing_backoff_active_) {
+        this->publish_status_("Disconnected");
+      }
+    }
+    return;
+  }
+
   if (this->state_ == STATE_AUTH_FAILED) {
     if (!this->pairing_failed_ &&
         (now - this->last_action_ms_ >= AUTH_COOLDOWN_MS)) {
-      ESP_LOGI(TAG, "Auth cooldown elapsed; retrying BLE unlock");
-      this->start_unlock_sequence_();
+      this->force_disconnect_("Auth failed -> reconnecting");
     }
     return;
   }
 
   if (this->state_ == STATE_CONNECTED_WAIT_SEC) {
     if (now - this->last_action_ms_ >= PAIRING_TIMEOUT_MS) {
-      ESP_LOGW(TAG, "BLE pairing/encryption timed out after %ums",
-               static_cast<unsigned>(PAIRING_TIMEOUT_MS));
-      this->handle_pairing_failure_(this->parent()->get_remote_bda(), 0x63);
+      if (this->has_pin_ && !this->ble_sec_ready_) {
+        ESP_LOGW(TAG, "BLE pairing/encryption timed out after %ums",
+                 static_cast<unsigned>(PAIRING_TIMEOUT_MS));
+        this->handle_pairing_failure_(this->parent()->get_remote_bda(), 0x63);
+      } else {
+        ESP_LOGW(TAG, "BLE GATT service discovery timed out after %ums",
+                 static_cast<unsigned>(PAIRING_TIMEOUT_MS));
+        this->force_disconnect_("GATT discovery timeout");
+      }
     }
     return;
   }
@@ -1960,8 +2035,10 @@ void BdrBleComponent::loop() {
         this->active_group_idx_ = -1;
         this->active_req_ = {};
         this->consecutive_timeouts_ = 0;
+        this->tx_stall_count_ = 0;
         this->registry_.reset_poll_timers();
         this->last_action_ms_ = now;
+        this->last_rx_ms_ = now;
       }
     }
     return;
@@ -1980,11 +2057,33 @@ void BdrBleComponent::loop() {
     // Wait for multi-fragment TX to finish before timing out or starting a new request
     if (this->transport_.is_tx_in_progress()) {
       if (now - this->last_action_ms_ >= REQUEST_TIMEOUT_MS) {
-        ESP_LOGW(TAG, "Multi-fragment TX stalled; resetting TX state");
         this->transport_.reset_tx();
+        this->last_action_ms_ = now;
+        this->tx_stall_count_++;
+        if (this->tx_stall_count_ >= MAX_TX_STALLS) {
+          ESP_LOGW(TAG, "Multi-fragment TX stalled %u times; closing BLE link",
+                   this->tx_stall_count_);
+          this->force_disconnect_("BLE TX stalled -> reconnecting");
+          return;
+        }
+        ESP_LOGW(TAG, "Multi-fragment TX stalled (%u/%u); resetting TX state",
+                 this->tx_stall_count_, MAX_TX_STALLS);
       } else {
         return;
       }
+    }
+
+    // Dynamic RX liveness watchdog scaled to the shortest active poll interval
+    const uint32_t rx_watchdog_ms =
+        compute_rx_watchdog_ms(this->shortest_active_poll_interval_ms_());
+    if (rx_watchdog_ms != 0 && this->last_rx_ms_ != 0 &&
+        (now - this->last_rx_ms_ >= rx_watchdog_ms)) {
+      ESP_LOGW(TAG,
+               "No BLE responses received for %us (watchdog=%us); closing BLE link",
+               static_cast<unsigned>((now - this->last_rx_ms_) / 1000UL),
+               static_cast<unsigned>(rx_watchdog_ms / 1000UL));
+      this->force_disconnect_("BLE link silent -> reconnecting");
+      return;
     }
 
     const bool channel_busy = this->transport_.is_rx_busy(now);
@@ -2005,10 +2104,19 @@ void BdrBleComponent::loop() {
       this->consecutive_timeouts_++;
 
       if (this->consecutive_timeouts_ >= MAX_CONSECUTIVE_TIMEOUTS) {
-        ESP_LOGW(TAG, "%u consecutive request timeouts; re-authenticating RUB session",
-                 this->consecutive_timeouts_);
         this->consecutive_timeouts_ = 0;
-        this->start_rub_auth_("Re-authenticating CAN-BUS");
+        if (this->rub_recovery_attempts_ == 0) {
+          this->rub_recovery_attempts_++;
+          ESP_LOGW(TAG,
+                   "%u consecutive request timeouts; re-authenticating RUB session",
+                   static_cast<unsigned>(MAX_CONSECUTIVE_TIMEOUTS));
+          this->start_rub_auth_("Re-authenticating CAN-BUS");
+        } else {
+          ESP_LOGW(TAG,
+                   "%u consecutive request timeouts persisted after RUB re-auth; closing BLE link",
+                   static_cast<unsigned>(MAX_CONSECUTIVE_TIMEOUTS));
+          this->force_disconnect_("Link unresponsive -> reconnecting");
+        }
         return;
       }
 

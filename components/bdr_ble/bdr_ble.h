@@ -172,6 +172,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
     STATE_READING_SNAPSHOT,
     STATE_READY,
     STATE_AUTH_FAILED,
+    STATE_CLOSING,
   };
 
   enum CccdSubState : uint8_t {
@@ -192,6 +193,8 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
 
   void reset_session_state_(bool clear_writes);
   void reset_active_transaction_();
+  void force_disconnect_(const char *reason);
+  uint32_t shortest_active_poll_interval_ms_() const;
   void begin_snapshot_scan_(bool discovery);
   void add_unique_snapshot_node_(uint8_t node_id);
   void build_configured_snapshot_nodes_();
@@ -248,10 +251,13 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint32_t disconnected_since_ms_{0};
   bool stale_published_{false};
   uint32_t last_action_ms_{0};
+  uint32_t last_rx_ms_{0};
   uint32_t cooldown_until_ms_{0};
   uint8_t cccd_step_{0};
   uint8_t retry_count_{0};
   uint8_t consecutive_timeouts_{0};
+  uint8_t rub_recovery_attempts_{0};
+  uint8_t tx_stall_count_{0};
   std::vector<uint8_t> active_snapshot_nodes_;
   std::vector<uint8_t> can_probe_queue_;
   std::vector<DetectedCanNode> detected_can_nodes_;

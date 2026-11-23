@@ -319,6 +319,20 @@ void test_snapshot_auth_level_filtering() {
   assert(is_snapshot_subindex_for_auth_level(15, 5));
 }
 
+void test_rx_watchdog_calculation() {
+  // No active poll groups -> disabled (0)
+  assert(compute_rx_watchdog_ms(0) == 0);
+  // Fast polling clamps to minimum 180 s
+  assert(compute_rx_watchdog_ms(5000) == RX_WATCHDOG_MIN_MS);
+  assert(compute_rx_watchdog_ms(10000) == RX_WATCHDOG_MIN_MS);
+  assert(compute_rx_watchdog_ms(30000) == RX_WATCHDOG_MIN_MS);
+  // Slower polling scales to 4 * interval + 30 s
+  assert(compute_rx_watchdog_ms(60000) == 270000UL);
+  assert(compute_rx_watchdog_ms(300000) == 1230000UL);
+  // Overflow cap for very large intervals
+  assert(compute_rx_watchdog_ms(3600000) == 3630000UL);
+}
+
 }  // namespace
 
 int main() {
@@ -330,6 +344,7 @@ int main() {
   test_sdo_abort_classification();
   test_direct_channel_transport();
   test_snapshot_auth_level_filtering();
+  test_rx_watchdog_calculation();
   std::printf("All bdr_protocol & bdr_transport unit tests passed!\n");
   return 0;
 }

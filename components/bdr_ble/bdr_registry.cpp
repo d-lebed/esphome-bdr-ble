@@ -279,6 +279,14 @@ void BdrDatapointRegistry::on_connect() {
   }
 }
 
+void BdrDatapointRegistry::clear_discovered_snapshots() {
+  this->discovered_snapshots_.clear();
+  this->snapshot_logging_active_ = false;
+  this->snapshot_header_logged_ = false;
+  this->snapshot_node_log_idx_ = 0;
+  this->snapshot_log_cursor_ = 0;
+}
+
 void BdrDatapointRegistry::reset_poll_timers() {
   for (auto &grp : this->poll_groups_) {
     grp.last_cycle_start_ms = 0;
@@ -316,7 +324,8 @@ uint8_t BdrDatapointRegistry::get_discovered_level(uint8_t node_id,
 void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
                                                       uint8_t sub_index,
                                                       const uint8_t *data,
-                                                      size_t data_len) {
+                                                      size_t data_len,
+                                                      bool info_log) {
   if (data_len < 4) {
     ESP_LOGD(TAG, "Snapshot N%u 0x502B:%02X -> %zu bytes (empty)", node_id,
              sub_index, data_len);
@@ -427,9 +436,15 @@ void BdrDatapointRegistry::handle_snapshot_descriptor(uint8_t node_id,
     }
     parsed++;
   }
-  ESP_LOGI(TAG,
-           "Snapshot N%u 0x502B:%02X -> %u descriptors (%zu bytes, node unique=%zu)",
-           node_id, sub_index, parsed, data_len, node_snap.entries.size());
+  if (info_log) {
+    ESP_LOGI(TAG,
+             "Snapshot N%u 0x502B:%02X -> %u descriptors (%zu bytes, node unique=%zu)",
+             node_id, sub_index, parsed, data_len, node_snap.entries.size());
+  } else {
+    ESP_LOGD(TAG,
+             "Snapshot N%u 0x502B:%02X -> %u descriptors (%zu bytes, node unique=%zu)",
+             node_id, sub_index, parsed, data_len, node_snap.entries.size());
+  }
 }
 
 void BdrDatapointRegistry::begin_snapshot_logging(uint8_t default_node_id) {
@@ -455,6 +470,12 @@ bool BdrDatapointRegistry::log_snapshot_chunk(size_t max_lines) {
   while (this->snapshot_node_log_idx_ < this->discovered_snapshots_.size() &&
          lines_emitted < max_lines) {
     const auto &snap = this->discovered_snapshots_[this->snapshot_node_log_idx_];
+    if (snap.entries.empty()) {
+      this->snapshot_node_log_idx_++;
+      this->snapshot_log_cursor_ = 0;
+      this->snapshot_header_logged_ = false;
+      continue;
+    }
     const bool is_default = (snap.node_id == this->snapshot_default_node_id_);
 
     if (!this->snapshot_header_logged_) {

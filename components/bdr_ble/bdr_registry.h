@@ -116,8 +116,11 @@ class BdrDatapointRegistry {
                               uint8_t sub_index, uint32_t raw_val,
                               uint32_t &out_min, uint32_t &out_max) const;
 
-  /// Reset per-connection flags (`unsupported`, `single_read_only`, `discovered_datapoints_`)
+  /// Reset per-connection flags (`unsupported`, `single_read_only`, `discovered_snapshots_`)
   void on_connect();
+
+  /// Clear previously collected 0x502B snapshot entries before starting an on-demand discovery scan
+  void clear_discovered_snapshots();
 
   /// Reset poll cycle timestamps when entering STATE_READY
   void reset_poll_timers();
@@ -127,7 +130,8 @@ class BdrDatapointRegistry {
 
   /// Parse a 0x502B:01..15 menu descriptor response for `node_id`
   void handle_snapshot_descriptor(uint8_t node_id, uint8_t sub_index,
-                                  const uint8_t *data, size_t data_len);
+                                  const uint8_t *data, size_t data_len,
+                                  bool info_log = false);
 
   /// Begin chunked BDR_SNAPSHOT logging across loop() ticks
   void begin_snapshot_logging(uint8_t default_node_id);

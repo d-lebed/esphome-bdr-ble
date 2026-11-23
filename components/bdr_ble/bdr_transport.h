@@ -21,7 +21,7 @@ enum class RxSegmentStatus : uint8_t {
 class DirectChannelTransport {
  public:
   static constexpr size_t MAX_PAYLOAD_LEN = 512;
-  static constexpr size_t MAX_RX_REASSEMBLY_LEN = 2048;
+  static constexpr size_t MAX_RX_REASSEMBLY_LEN = 4096;
   static constexpr uint32_t RX_STALE_TIMEOUT_MS = 1000;
 
   void reserve_buffers();

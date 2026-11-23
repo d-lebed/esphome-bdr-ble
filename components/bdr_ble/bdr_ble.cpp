@@ -27,9 +27,7 @@ void BdrBleComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "BDR Thermea BLE Boiler Controller:");
   ESP_LOGCONFIG(TAG, "  Default Node ID: 0x%02X", this->default_node_id_);
   ESP_LOGCONFIG(TAG, "  Auth Level: %u", this->auth_level_);
-  ESP_LOGCONFIG(TAG, "  Log Snapshot: %s",
-                this->log_snapshot_ ? "true" : "false");
-  this->build_snapshot_nodes_();
+  this->build_configured_snapshot_nodes_();
   if (!this->active_snapshot_nodes_.empty()) {
     char nbuf[64];
     int npos = 0;
@@ -40,7 +38,7 @@ void BdrBleComponent::dump_config() {
       npos += snprintf(nbuf + npos, sizeof(nbuf) - npos, "%s%u",
                        (i > 0) ? ", " : "", this->active_snapshot_nodes_[i]);
     }
-    ESP_LOGCONFIG(TAG, "  Snapshot Nodes: [%s]", nbuf);
+    ESP_LOGCONFIG(TAG, "  Configured CAN Nodes: [%s]", nbuf);
   }
   if (this->has_pin_) {
     ESP_LOGCONFIG(TAG, "  PIN: ****%02u (Passkey pairing mode)",
@@ -62,28 +60,81 @@ void BdrBleComponent::reset_active_transaction_() {
   this->active_req_ = {};
 }
 
-void BdrBleComponent::build_snapshot_nodes_() {
-  this->active_snapshot_nodes_.clear();
-  auto add_unique = [this](uint8_t n) {
-    for (uint8_t existing : this->active_snapshot_nodes_) {
-      if (existing == n) {
-        return;
-      }
+void BdrBleComponent::add_unique_snapshot_node_(uint8_t node_id) {
+  for (uint8_t existing : this->active_snapshot_nodes_) {
+    if (existing == node_id) {
+      return;
     }
-    this->active_snapshot_nodes_.push_back(n);
-  };
-  if (!this->configured_snapshot_nodes_.empty()) {
-    for (uint8_t n : this->configured_snapshot_nodes_) {
-      add_unique(n);
-    }
-  } else {
-    add_unique(this->default_node_id_);
   }
+  this->active_snapshot_nodes_.push_back(node_id);
+}
+
+void BdrBleComponent::build_configured_snapshot_nodes_() {
+  this->active_snapshot_nodes_.clear();
+  this->add_unique_snapshot_node_(this->default_node_id_);
   for (const auto &grp : this->registry_.groups()) {
     for (const auto &dp : grp.items) {
-      add_unique(dp.node_id);
+      this->add_unique_snapshot_node_(dp.node_id);
     }
   }
+}
+
+void BdrBleComponent::begin_snapshot_scan_(bool discovery) {
+  this->reset_active_transaction_();
+  this->active_group_idx_ = -1;
+  this->active_item_idx_ = 0;
+  this->discovery_mode_ = discovery;
+  this->snapshot_node_cursor_ = 0;
+  this->snapshot_phase_ = SNAP_READ_STRUCT_VER;
+  this->snapshot_sub_idx_ = 1;
+  this->snapshot_sub_retries_ = 0;
+  this->can_probe_cursor_ = 0;
+  this->can_probe_reported_count_ = 0;
+  this->can_probe_queue_.clear();
+  this->detected_can_nodes_.clear();
+  this->registry_.clear_discovered_snapshots();
+
+  if (discovery) {
+    this->active_snapshot_nodes_.clear();
+    this->can_node_count_probed_ = false;
+    this->can_node_probe_done_ = false;
+    this->publish_status_("Discovering CAN nodes & snapshot");
+    ESP_LOGI(TAG,
+             "Starting CAN node discovery (0x1F85:00 + 0x2001:02) and 0x502B snapshot scan");
+  } else {
+    this->can_node_count_probed_ = true;
+    this->can_node_probe_done_ = true;
+    this->build_configured_snapshot_nodes_();
+    this->publish_status_("Connected (loading device limits)");
+  }
+
+  this->state_ = STATE_READING_SNAPSHOT;
+  this->last_action_ms_ = millis();
+}
+
+void BdrBleComponent::start_discovery() {
+  if (this->state_ == STATE_DISCONNECTED || this->state_ == STATE_AUTH_FAILED ||
+      this->pairing_failed_) {
+    ESP_LOGW(TAG,
+             "Cannot start CAN discovery: BLE session not connected (state=%u)",
+             static_cast<unsigned>(this->state_));
+    return;
+  }
+  if (this->state_ == STATE_READING_SNAPSHOT && this->discovery_mode_) {
+    ESP_LOGI(TAG, "CAN node & snapshot discovery already in progress");
+    return;
+  }
+  if (this->state_ == STATE_READY &&
+      this->active_req_.kind == RequestKind::NONE &&
+      !this->transport_.is_tx_in_progress() &&
+      !this->registry_.is_snapshot_logging_active()) {
+    this->pending_discovery_ = false;
+    this->begin_snapshot_scan_(true);
+    return;
+  }
+  this->pending_discovery_ = true;
+  ESP_LOGI(TAG,
+           "CAN node & snapshot discovery queued; starting once current operation finishes");
 }
 
 void BdrBleComponent::advance_can_node_probe_() {
@@ -95,61 +146,91 @@ void BdrBleComponent::advance_can_node_probe_() {
 
 void BdrBleComponent::finish_can_node_probe_() {
   this->can_node_probe_done_ = true;
+  this->active_snapshot_nodes_.clear();
+
   if (this->detected_can_nodes_.empty()) {
     if (this->can_probe_reported_count_ > 0) {
       ESP_LOGI(
           TAG,
-          "CAN bus 0x1F85:00 reported %u nodes, no devices replied to 0x2001:02",
+          "CAN bus 0x1F85:00 reported %u nodes, no devices replied to 0x2001:02; scanning configured nodes",
           this->can_probe_reported_count_);
     }
-    return;
-  }
+    this->build_configured_snapshot_nodes_();
+  } else {
+    char nbuf[160];
+    int npos = 0;
+    bool has_secondary = false;
+    for (size_t i = 0; i < this->detected_can_nodes_.size(); i++) {
+      const auto &node = this->detected_can_nodes_[i];
+      this->add_unique_snapshot_node_(node.node_id);
+      if (npos < static_cast<int>(sizeof(nbuf)) - 20) {
+        npos += snprintf(nbuf + npos, sizeof(nbuf) - npos, "%s%u (type=%u)",
+                         (i > 0) ? ", " : "", node.node_id, node.device_type);
+      }
+      if (node.node_id != this->default_node_id_) {
+        has_secondary = true;
+      }
+    }
+    // Also include any explicitly configured entity nodes even if 0x2001:02 missed them
+    this->add_unique_snapshot_node_(this->default_node_id_);
+    for (const auto &grp : this->registry_.groups()) {
+      for (const auto &dp : grp.items) {
+        this->add_unique_snapshot_node_(dp.node_id);
+      }
+    }
 
-  char nbuf[160];
-  int npos = 0;
-  uint8_t first_secondary = 0;
-  bool has_node4 = false;
-  for (size_t i = 0;
-       i < this->detected_can_nodes_.size() &&
-       npos < static_cast<int>(sizeof(nbuf)) - 20;
-       i++) {
-    const auto &node = this->detected_can_nodes_[i];
-    npos += snprintf(nbuf + npos, sizeof(nbuf) - npos, "%s%u (type=%u)",
-                     (i > 0) ? ", " : "", node.node_id, node.device_type);
-    if (node.node_id != this->default_node_id_) {
-      if (first_secondary == 0) {
-        first_secondary = node.node_id;
-      }
-      if (node.node_id == 4) {
-        has_node4 = true;
-      }
+    if (has_secondary) {
+      ESP_LOGI(
+          TAG,
+          "CAN bus nodes present (0x1F85:00=%u): [%s] — scanning 0x502B snapshot on all detected nodes",
+          this->can_probe_reported_count_, nbuf);
+    } else {
+      ESP_LOGI(
+          TAG,
+          "CAN bus nodes present (0x1F85:00=%u): [%s] (no secondary nodes detected)",
+          this->can_probe_reported_count_, nbuf);
     }
   }
 
-  if (first_secondary != 0) {
-    uint8_t example_secondary = has_node4 ? 4 : first_secondary;
-    ESP_LOGI(
-        TAG,
-        "CAN bus nodes present (0x1F85:00=%u): [%s] — secondary node(s) detected; "
-        "add snapshot_nodes: [%u, %u] or per-entity node_id: to inspect/poll them",
-        this->can_probe_reported_count_, nbuf, this->default_node_id_,
-        example_secondary);
-  } else {
-    ESP_LOGI(
-        TAG,
-        "CAN bus nodes present (0x1F85:00=%u): [%s] (no secondary nodes detected)",
-        this->can_probe_reported_count_, nbuf);
+  this->snapshot_node_cursor_ = 0;
+  this->snapshot_phase_ = SNAP_READ_STRUCT_VER;
+  this->snapshot_sub_idx_ = 1;
+  this->snapshot_sub_retries_ = 0;
+}
+
+void BdrBleComponent::begin_snapshot_descriptors_() {
+  this->snapshot_phase_ = SNAP_READ_DESCRIPTORS;
+  this->snapshot_sub_retries_ = 0;
+  for (uint8_t sub = 1; sub <= SNAPSHOT_MAX_SUB_INDEX; sub++) {
+    if (is_snapshot_subindex_for_auth_level(sub, this->auth_level_)) {
+      this->snapshot_sub_idx_ = sub;
+      return;
+    }
   }
+  this->advance_snapshot_node_();
+}
+
+void BdrBleComponent::advance_snapshot_node_() {
+  this->snapshot_node_cursor_++;
+  this->snapshot_phase_ = SNAP_READ_STRUCT_VER;
+  this->snapshot_sub_idx_ = 1;
+  this->snapshot_sub_retries_ = 0;
 }
 
 void BdrBleComponent::advance_snapshot_step_(bool skip_remaining_for_node) {
-  if (skip_remaining_for_node ||
-      this->snapshot_sub_idx_ >= SNAPSHOT_MAX_SUB_INDEX) {
-    this->snapshot_node_cursor_++;
-    this->snapshot_sub_idx_ = 1;
-  } else {
-    this->snapshot_sub_idx_++;
+  if (skip_remaining_for_node) {
+    this->advance_snapshot_node_();
+    return;
   }
+  for (uint8_t sub = static_cast<uint8_t>(this->snapshot_sub_idx_ + 1);
+       sub <= SNAPSHOT_MAX_SUB_INDEX; sub++) {
+    if (is_snapshot_subindex_for_auth_level(sub, this->auth_level_)) {
+      this->snapshot_sub_idx_ = sub;
+      this->snapshot_sub_retries_ = 0;
+      return;
+    }
+  }
+  this->advance_snapshot_node_();
 }
 
 void BdrBleComponent::reset_session_state_(bool clear_writes) {
@@ -614,8 +695,13 @@ bool BdrBleComponent::send_write_param_(uint8_t node_id, uint16_t index,
   req[8] = static_cast<uint8_t>(index & 0xFF);
   req[9] = sub_index;
   std::memcpy(&req[10], data, data_len);
-  ESP_LOGI(TAG, "Sending WriteConfirmedRequest for 0x%04X:%02X (%zu bytes)",
-           index, sub_index, data_len);
+  if (index == INDEX_AP_MENU_USED_STRUCT) {
+    ESP_LOGD(TAG, "Selecting menu structure on N%u via 0x%04X:%02X (%zu bytes)",
+             node_id, index, sub_index, data_len);
+  } else {
+    ESP_LOGI(TAG, "Sending WriteConfirmedRequest for 0x%04X:%02X (%zu bytes)",
+             index, sub_index, data_len);
+  }
   return this->send_direct_channel_(req, 10 + data_len);
 }
 
@@ -761,15 +847,17 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
         this->h_svc3_ack_cccd_ = this->has_pin_ ? HANDLE_SVC3_ACK_CCCD : 0;
         this->get_list_stage_ = 0;
         this->snapshot_node_cursor_ = 0;
+        this->snapshot_phase_ = SNAP_READ_STRUCT_VER;
         this->snapshot_sub_idx_ = 1;
+        this->snapshot_sub_retries_ = 0;
         this->can_probe_cursor_ = 0;
         this->can_probe_reported_count_ = 0;
-        this->can_node_count_probed_ = false;
-        this->can_node_probe_done_ = false;
+        this->can_node_count_probed_ = true;
+        this->can_node_probe_done_ = true;
         this->can_probe_queue_.clear();
         this->detected_can_nodes_.clear();
-        this->snapshot_completed_ = false;
-        this->build_snapshot_nodes_();
+        this->discovery_mode_ = false;
+        this->build_configured_snapshot_nodes_();
         this->negotiated_mtu_ = 23;
         this->reset_session_state_(false);
         this->registry_.on_connect();
@@ -800,6 +888,8 @@ void BdrBleComponent::gattc_event_handler(esp_gattc_cb_event_t event,
       this->state_ = STATE_DISCONNECTED;
       this->gatt_search_completed_ = false;
       this->ble_sec_ready_ = false;
+      this->discovery_mode_ = false;
+      this->pending_discovery_ = false;
       this->disconnected_since_ms_ = (now == 0) ? 1 : now;
       this->reset_session_state_(true);
       if (!this->pairing_backoff_active_) {
@@ -1111,27 +1201,17 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
       this->stale_published_ = false;
       this->last_action_ms_ = millis();
 
-      // If we already read the 0x502B snapshot on this connection, resume STATE_READY directly
-      if (this->snapshot_completed_) {
+      // Trigger queued on-demand discovery, or run quiet boot metadata load once per boot.
+      // Subsequent reconnects enter STATE_READY immediately without re-dumping snapshots.
+      if (this->pending_discovery_) {
+        this->pending_discovery_ = false;
+        this->begin_snapshot_scan_(true);
+      } else if (!this->boot_snapshot_done_) {
+        this->begin_snapshot_scan_(false);
+      } else {
         this->publish_status_("Ready");
         this->state_ = STATE_READY;
-        return;
       }
-
-      char msg[64];
-      snprintf(msg, sizeof(msg), "Connected (auth level %u, reading snapshot)",
-               granted);
-      this->publish_status_(msg);
-      this->state_ = STATE_READING_SNAPSHOT;
-      this->snapshot_node_cursor_ = 0;
-      this->snapshot_sub_idx_ = 1;
-      this->can_probe_cursor_ = 0;
-      this->can_probe_reported_count_ = 0;
-      this->can_node_count_probed_ = !this->log_snapshot_;
-      this->can_node_probe_done_ = !this->log_snapshot_;
-      this->can_probe_queue_.clear();
-      this->detected_can_nodes_.clear();
-      this->build_snapshot_nodes_();
     } else {
       this->publish_status_("CAN-BUS Auth Rejected");
       this->state_ = STATE_AUTH_FAILED;
@@ -1195,7 +1275,7 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
                  static_cast<unsigned>(abort_code),
                  sdo_abort_code_str(abort_code));
         this->can_node_count_probed_ = true;
-        this->can_node_probe_done_ = true;
+        this->finish_can_node_probe_();
         return;
       }
       if (index == INDEX_DEVICE_INFO &&
@@ -1210,13 +1290,37 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
         return;
       }
     }
-    if (index == INDEX_AP_MENU_DESCRIPTOR) {
-      ESP_LOGD(TAG, "Snapshot N%u 0x502B:%02X -> empty/NACK (abort=0x%08X)",
-               node_id, sub_index, static_cast<unsigned>(abort_code));
-      if (this->state_ == STATE_READING_SNAPSHOT &&
-          this->snapshot_node_cursor_ < this->active_snapshot_nodes_.size() &&
-          node_id == this->active_snapshot_nodes_[this->snapshot_node_cursor_] &&
+    if (this->state_ == STATE_READING_SNAPSHOT && this->can_node_probe_done_ &&
+        this->snapshot_node_cursor_ < this->active_snapshot_nodes_.size() &&
+        node_id == this->active_snapshot_nodes_[this->snapshot_node_cursor_]) {
+      if (index == INDEX_AP_MENU_SUPPORTED_STRUCT && sub_index == 0 &&
+          this->snapshot_phase_ == SNAP_READ_STRUCT_VER) {
+        if (node_id != this->default_node_id_ &&
+            abort_code == SDO_ABORT_TIMEOUT) {
+          ESP_LOGW(TAG,
+                   "Snapshot node %u unavailable on 0x502C:00 (timeout); skipping node",
+                   node_id);
+          this->advance_snapshot_node_();
+        } else {
+          ESP_LOGD(TAG,
+                   "Snapshot N%u 0x502C:00 NACK (abort=0x%08X); proceeding directly to 0x502B",
+                   node_id, static_cast<unsigned>(abort_code));
+          this->begin_snapshot_descriptors_();
+        }
+        return;
+      }
+      if (index == INDEX_AP_MENU_DESCRIPTOR &&
+          this->snapshot_phase_ == SNAP_READ_DESCRIPTORS &&
           sub_index == this->snapshot_sub_idx_) {
+        if (abort_code == 0x08000000UL && this->snapshot_sub_retries_ < 1) {
+          this->snapshot_sub_retries_++;
+          ESP_LOGD(TAG,
+                   "Snapshot N%u 0x502B:%02X returned general error (0x08000000); retrying once",
+                   node_id, sub_index);
+          return;
+        }
+        ESP_LOGD(TAG, "Snapshot N%u 0x502B:%02X -> empty/NACK (abort=0x%08X)",
+                 node_id, sub_index, static_cast<unsigned>(abort_code));
         bool skip_node =
             (sub_index == 1 && node_id != this->default_node_id_ &&
              (abort_code == SDO_ABORT_TIMEOUT ||
@@ -1227,8 +1331,8 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
                    node_id, static_cast<unsigned>(abort_code));
         }
         this->advance_snapshot_step_(skip_node);
+        return;
       }
-      return;
     }
 
     SdoAbortCategory cat = classify_sdo_abort(abort_code);
@@ -1254,6 +1358,20 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
+    if (this->active_req_.kind == RequestKind::SNAPSHOT &&
+        this->active_req_.node_id == node_id &&
+        this->active_req_.index == index &&
+        this->active_req_.sub_index == sub_index &&
+        index == INDEX_AP_MENU_USED_STRUCT &&
+        this->state_ == STATE_READING_SNAPSHOT &&
+        this->snapshot_phase_ == SNAP_WRITE_STRUCT_VER) {
+      this->active_req_ = {};
+      this->consecutive_timeouts_ = 0;
+      ESP_LOGD(TAG, "Node %u menu structure V2 selected (0x502D:00 = 0x02)",
+               node_id);
+      this->begin_snapshot_descriptors_();
+      return;
+    }
     if (this->active_req_.kind != RequestKind::WRITE ||
         this->active_req_.node_id != node_id ||
         this->active_req_.index != index ||
@@ -1274,6 +1392,29 @@ void BdrBleComponent::handle_direct_payload_(const uint8_t *payload,
     uint16_t index =
         (static_cast<uint16_t>(payload[7]) << 8) | payload[8];
     uint8_t sub_index = payload[9];
+    if (this->active_req_.kind == RequestKind::SNAPSHOT &&
+        this->active_req_.node_id == node_id &&
+        this->active_req_.index == index &&
+        this->active_req_.sub_index == sub_index &&
+        index == INDEX_AP_MENU_USED_STRUCT &&
+        this->state_ == STATE_READING_SNAPSHOT &&
+        this->snapshot_phase_ == SNAP_WRITE_STRUCT_VER) {
+      uint32_t abort_code = 0;
+      if (len >= 14) {
+        abort_code = static_cast<uint32_t>(payload[10]) |
+                     (static_cast<uint32_t>(payload[11]) << 8) |
+                     (static_cast<uint32_t>(payload[12]) << 16) |
+                     (static_cast<uint32_t>(payload[13]) << 24);
+      }
+      this->active_req_ = {};
+      this->consecutive_timeouts_ = 0;
+      ESP_LOGW(TAG,
+               "Node %u rejected 0x502D:00 = 0x02 (abort=0x%08X: %s); trying 0x502B anyway",
+               node_id, static_cast<unsigned>(abort_code),
+               sdo_abort_code_str(abort_code));
+      this->begin_snapshot_descriptors_();
+      return;
+    }
     if (this->active_req_.kind != RequestKind::WRITE ||
         this->active_req_.node_id != node_id ||
         this->active_req_.index != index ||
@@ -1360,7 +1501,7 @@ void BdrBleComponent::handle_single_read_ack_(uint8_t node_id, uint16_t index,
         ESP_LOGI(TAG,
                  "CAN bus 0x1F85:00 returned %u (len=%zu) — no secondary CAN node list reported",
                  raw_val, data_len);
-        this->can_node_probe_done_ = true;
+        this->finish_can_node_probe_();
       }
       return;
     }
@@ -1383,15 +1524,44 @@ void BdrBleComponent::handle_single_read_ack_(uint8_t node_id, uint16_t index,
       return;
     }
   }
+  if (this->state_ == STATE_READING_SNAPSHOT && this->can_node_probe_done_ &&
+      this->snapshot_node_cursor_ < this->active_snapshot_nodes_.size() &&
+      node_id == this->active_snapshot_nodes_[this->snapshot_node_cursor_]) {
+    if (index == INDEX_AP_MENU_SUPPORTED_STRUCT && sub_index == 0 &&
+        this->snapshot_phase_ == SNAP_READ_STRUCT_VER) {
+      bool supports_v2 = false;
+      for (size_t i = 0; i < data_len; i++) {
+        if (data[i] == MENU_STRUCTURE_V2) {
+          supports_v2 = true;
+          break;
+        }
+      }
+      if (supports_v2) {
+        ESP_LOGD(TAG,
+                 "Node %u supports menu structure V2 (0x502C:00); selecting via 0x502D:00 = 0x02",
+                 node_id);
+        this->snapshot_phase_ = SNAP_WRITE_STRUCT_VER;
+      } else {
+        ESP_LOGW(TAG,
+                 "Node %u does not advertise menu structure V2 in 0x502C:00 (len=%zu); skipping 0x502B",
+                 node_id, data_len);
+        this->advance_snapshot_node_();
+      }
+      return;
+    }
+    if (index == INDEX_AP_MENU_DESCRIPTOR &&
+        this->snapshot_phase_ == SNAP_READ_DESCRIPTORS &&
+        sub_index == this->snapshot_sub_idx_) {
+      this->registry_.handle_snapshot_descriptor(node_id, sub_index, data,
+                                                 data_len,
+                                                 this->discovery_mode_);
+      this->advance_snapshot_step_(false);
+      return;
+    }
+  }
   if (index == INDEX_AP_MENU_DESCRIPTOR) {
     this->registry_.handle_snapshot_descriptor(node_id, sub_index, data,
-                                               data_len);
-    if (this->state_ == STATE_READING_SNAPSHOT &&
-        this->snapshot_node_cursor_ < this->active_snapshot_nodes_.size() &&
-        node_id == this->active_snapshot_nodes_[this->snapshot_node_cursor_] &&
-        sub_index == this->snapshot_sub_idx_) {
-      this->advance_snapshot_step_(false);
-    }
+                                               data_len, this->discovery_mode_);
     return;
   }
   char tag[24];
@@ -1663,34 +1833,61 @@ void BdrBleComponent::loop() {
       ActiveRequest timed_out = this->active_req_;
       this->reset_active_transaction_();
       if (timed_out.index == INDEX_CAN_VENDOR_ID && timed_out.sub_index == 0) {
-        ESP_LOGI(TAG, "CAN node probe 0x1F85:00 timed out; continuing snapshot");
+        ESP_LOGI(TAG, "CAN node probe 0x1F85:00 timed out; scanning configured nodes");
         this->can_node_count_probed_ = true;
-        this->can_node_probe_done_ = true;
+        this->finish_can_node_probe_();
       } else if (timed_out.index == INDEX_DEVICE_INFO &&
                  timed_out.sub_index == SUBINDEX_DEVICE_INFO_TYPE &&
                  !this->can_node_probe_done_) {
         ESP_LOGD(TAG, "CAN node %u timed out on 0x2001:02; advancing",
                  timed_out.node_id);
         this->advance_can_node_probe_();
-      } else {
-        bool skip_node =
-            (timed_out.sub_index == 1 &&
-             timed_out.node_id != this->default_node_id_);
-        if (skip_node) {
+      } else if (timed_out.index == INDEX_AP_MENU_SUPPORTED_STRUCT &&
+                 this->snapshot_phase_ == SNAP_READ_STRUCT_VER) {
+        if (timed_out.node_id != this->default_node_id_) {
           ESP_LOGW(TAG,
-                   "Snapshot node %u timed out on 0x502B:01; skipping remaining sub-indices",
+                   "Snapshot node %u timed out on 0x502C:00; skipping node",
                    timed_out.node_id);
+          this->advance_snapshot_node_();
         } else {
-          ESP_LOGD(TAG, "Snapshot N%u 0x502B:%02X timed out; advancing",
-                   timed_out.node_id, timed_out.sub_index);
+          ESP_LOGD(TAG,
+                   "Snapshot N%u 0x502C:00 timed out; proceeding directly to 0x502B",
+                   timed_out.node_id);
+          this->begin_snapshot_descriptors_();
         }
-        this->advance_snapshot_step_(skip_node);
+      } else if (timed_out.index == INDEX_AP_MENU_USED_STRUCT &&
+                 this->snapshot_phase_ == SNAP_WRITE_STRUCT_VER) {
+        ESP_LOGW(TAG,
+                 "Snapshot N%u 0x502D:00 = 0x02 timed out; trying 0x502B anyway",
+                 timed_out.node_id);
+        this->begin_snapshot_descriptors_();
+      } else {
+        if ((timed_out.sub_index > 1 ||
+             timed_out.node_id == this->default_node_id_) &&
+            this->snapshot_sub_retries_ < 1) {
+          this->snapshot_sub_retries_++;
+          ESP_LOGW(TAG, "Snapshot N%u 0x502B:%02X timed out; retrying once",
+                   timed_out.node_id, timed_out.sub_index);
+        } else {
+          bool skip_node =
+              (timed_out.sub_index == 1 &&
+               timed_out.node_id != this->default_node_id_);
+          if (skip_node) {
+            ESP_LOGW(TAG,
+                     "Snapshot node %u timed out on 0x502B:01; skipping remaining sub-indices",
+                     timed_out.node_id);
+          } else {
+            ESP_LOGD(TAG, "Snapshot N%u 0x502B:%02X timed out; advancing",
+                     timed_out.node_id, timed_out.sub_index);
+          }
+          this->advance_snapshot_step_(skip_node);
+        }
       }
     }
     if (this->active_req_.kind == RequestKind::NONE &&
         !this->transport_.is_tx_in_progress() &&
         (now - this->last_action_ms_ >= MIN_TX_INTERVAL_MS)) {
-      if (this->log_snapshot_ && !this->can_node_probe_done_) {
+      if (this->discovery_mode_ && !this->can_node_probe_done_) {
         if (!this->can_node_count_probed_) {
           if (this->send_read_param_(this->default_node_id_,
                                      INDEX_CAN_VENDOR_ID, 0x00)) {
@@ -1719,18 +1916,43 @@ void BdrBleComponent::loop() {
                  this->active_snapshot_nodes_.size()) {
         uint8_t cur_node =
             this->active_snapshot_nodes_[this->snapshot_node_cursor_];
-        if (this->send_read_param_(cur_node, INDEX_AP_MENU_DESCRIPTOR,
-                                   this->snapshot_sub_idx_)) {
-          this->active_req_.kind = RequestKind::SNAPSHOT;
-          this->active_req_.node_id = cur_node;
-          this->active_req_.index = INDEX_AP_MENU_DESCRIPTOR;
-          this->active_req_.sub_index = this->snapshot_sub_idx_;
-          this->active_req_.started_ms = now;
-          this->active_req_.last_activity_ms = now;
+        if (this->snapshot_phase_ == SNAP_READ_STRUCT_VER) {
+          if (this->send_read_param_(cur_node, INDEX_AP_MENU_SUPPORTED_STRUCT,
+                                     0x00)) {
+            this->active_req_.kind = RequestKind::SNAPSHOT;
+            this->active_req_.node_id = cur_node;
+            this->active_req_.index = INDEX_AP_MENU_SUPPORTED_STRUCT;
+            this->active_req_.sub_index = 0x00;
+            this->active_req_.started_ms = now;
+            this->active_req_.last_activity_ms = now;
+          }
+        } else if (this->snapshot_phase_ == SNAP_WRITE_STRUCT_VER) {
+          const uint8_t ver = MENU_STRUCTURE_V2;
+          if (this->send_write_param_(cur_node, INDEX_AP_MENU_USED_STRUCT, 0x00,
+                                      &ver, 1)) {
+            this->active_req_.kind = RequestKind::SNAPSHOT;
+            this->active_req_.node_id = cur_node;
+            this->active_req_.index = INDEX_AP_MENU_USED_STRUCT;
+            this->active_req_.sub_index = 0x00;
+            this->active_req_.started_ms = now;
+            this->active_req_.last_activity_ms = now;
+          }
+        } else {
+          if (this->send_read_param_(cur_node, INDEX_AP_MENU_DESCRIPTOR,
+                                     this->snapshot_sub_idx_)) {
+            this->active_req_.kind = RequestKind::SNAPSHOT;
+            this->active_req_.node_id = cur_node;
+            this->active_req_.index = INDEX_AP_MENU_DESCRIPTOR;
+            this->active_req_.sub_index = this->snapshot_sub_idx_;
+            this->active_req_.started_ms = now;
+            this->active_req_.last_activity_ms = now;
+          }
         }
       } else {
-        this->snapshot_completed_ = true;
-        if (this->log_snapshot_) {
+        const bool was_discovery = this->discovery_mode_;
+        this->boot_snapshot_done_ = true;
+        this->discovery_mode_ = false;
+        if (was_discovery) {
           this->registry_.begin_snapshot_logging(this->default_node_id_);
         }
         this->publish_status_("Ready");
@@ -1766,6 +1988,13 @@ void BdrBleComponent::loop() {
     }
 
     const bool channel_busy = this->transport_.is_rx_busy(now);
+
+    if (this->pending_discovery_ &&
+        this->active_req_.kind == RequestKind::NONE && !channel_busy) {
+      this->pending_discovery_ = false;
+      this->begin_snapshot_scan_(true);
+      return;
+    }
 
     // Check if an active request timed out
     if (this->active_req_.kind != RequestKind::NONE && !channel_busy &&

@@ -65,9 +65,22 @@ inline constexpr uint16_t INDEX_DEVICE_INFO = 0x2001;
 inline constexpr uint8_t SUBINDEX_DEVICE_INFO_TYPE = 0x02;
 inline constexpr uint8_t MAX_CAN_NODE_PROBE = 16;
 
-// Dynamic appliance menu descriptor table index (SubIndex 1..15)
+// Dynamic appliance menu descriptor table (0x502B:01..15) and structure version negotiation (0x502C -> 0x502D)
 inline constexpr uint16_t INDEX_AP_MENU_DESCRIPTOR = 0x502B;
+inline constexpr uint16_t INDEX_AP_MENU_SUPPORTED_STRUCT = 0x502C;
+inline constexpr uint16_t INDEX_AP_MENU_USED_STRUCT = 0x502D;
+inline constexpr uint8_t MENU_STRUCTURE_V2 = 0x02;
 inline constexpr uint8_t SNAPSHOT_MAX_SUB_INDEX = 15;
+
+/// Returns true if 0x502B SubIndex (1..15) is accessible at the given auth_level (1..5).
+inline constexpr bool is_snapshot_subindex_for_auth_level(uint8_t sub_index,
+                                                          uint8_t auth_level) {
+  if (sub_index < 1 || sub_index > SNAPSHOT_MAX_SUB_INDEX) {
+    return false;
+  }
+  uint8_t req_level = static_cast<uint8_t>(((sub_index - 1) % 5) + 1);
+  return req_level <= auth_level;
+}
 
 // Timeouts aligned with boiler's CAN SDO / GetList round-trip
 inline constexpr uint32_t HANDSHAKE_TIMEOUT_MS = 3000;

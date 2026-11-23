@@ -31,8 +31,11 @@ bdr_ble:
   pin: !secret strateo_ble_pin
   node_id: 1
   auth_level: 4
-  # log_snapshot: false        # Optional: suppress BDR_SNAPSHOT lines & CAN node probe (0x1F85:00 + 0x2001:02) on connect (default: true)
-  # snapshot_nodes: [1, 4]     # Optional: scan 0x502B on additional CAN nodes (default: configured node_ids only)
+
+button:
+  - platform: bdr_ble
+    bdr_ble_id: boiler_hub
+    name: "Discover CAN Nodes & Snapshot"
 
 switch:
   - platform: ble_client

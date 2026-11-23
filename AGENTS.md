@@ -30,7 +30,7 @@ This repository contains the **`bdr_ble`** ESPHome external component for **BDR 
 
 ```text
 components/bdr_ble/
-├── __init__.py                         # Hub schema (ble_client_id, pin, node_id, auth_level, log_snapshot)
+├── __init__.py                         # Hub schema (ble_client_id, pin, node_id, auth_level) & bdr_ble.discover action
 ├── obd.py                              # Compile-time OBD dictionary resolver & ESPHome metadata inference
 ├── schema_helpers.py                   # Shared platform schema builders & Flash constexpr EnumEntry codegen
 ├── obd_catalog.json                    # Compact JSON catalog (3,092 datapoints, 204 enums, FGs, models)
@@ -40,6 +40,9 @@ components/bdr_ble/
 ├── bdr_ble.h / .cpp                    # BdrBleComponent: BLE GATT/GAP lifecycle, Service 3 + RUB auth & ActiveRequest slot
 ├── binary_sensor/
 │   └── __init__.py                     # Boolean/two-state status binary_sensor platform (single & grouped syntax)
+├── button/
+│   ├── __init__.py                     # On-demand CAN node & BDR_SNAPSHOT discovery button platform
+│   └── bdr_ble_button.h / .cpp         # BdrBleDiscoverButton entity class (Parented<BdrBleComponent>)
 ├── number/
 │   ├── __init__.py                     # Writable numeric parameter platform (single & grouped syntax)
 │   └── bdr_ble_number.h / .cpp         # BdrBleNumber entity class (Parented<BdrBleComponent>)

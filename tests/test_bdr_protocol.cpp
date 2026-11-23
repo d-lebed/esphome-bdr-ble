@@ -260,6 +260,63 @@ void test_direct_channel_transport() {
   assert(!tr.is_rx_busy(150));
   assert(rx_payload_len == payload.size());
   assert(std::memcmp(rx_payload, payload.data(), payload.size()) == 0);
+
+  // Large >2 kB RX frame (e.g. ~2.3 kB 0x502B descriptor block with 150 entries)
+  std::vector<uint8_t> big_payload(2300);
+  for (size_t i = 0; i < big_payload.size(); i++) {
+    big_payload[i] = static_cast<uint8_t>((i * 7 + 3) & 0xFF);
+  }
+  std::vector<uint8_t> big_frame;
+  wrap_direct_channel_frame_into(big_payload.data(), big_payload.size(),
+                                 big_frame);
+  size_t off = 0;
+  uint8_t seg_idx = 0;
+  uint32_t ts = 200;
+  while (off < big_frame.size()) {
+    size_t rem = big_frame.size() - off;
+    bool is_last = (rem <= DIRECT_TX_MAX_CHUNK_DATA);
+    size_t chunk = is_last ? rem : DIRECT_TX_MAX_CHUNK_DATA;
+    uint8_t seg_pkt[1 + DIRECT_TX_MAX_CHUNK_DATA];
+    seg_pkt[0] = is_last ? SEGMENT_FINAL : seg_idx++;
+    std::memcpy(&seg_pkt[1], big_frame.data() + off, chunk);
+    off += chunk;
+    auto st = tr.feed_rx_segment(seg_pkt, chunk + 1, ts, rx_payload,
+                                 rx_payload_len, rx_crc, calc_crc, stale);
+    ts += 10;
+    if (is_last) {
+      assert(st == RxSegmentStatus::FRAME_READY);
+      assert(rx_payload_len == big_payload.size());
+      assert(std::memcmp(rx_payload, big_payload.data(), big_payload.size()) ==
+             0);
+    } else {
+      assert(st == RxSegmentStatus::INCOMPLETE);
+    }
+  }
+}
+
+void test_snapshot_auth_level_filtering() {
+  assert(!is_snapshot_subindex_for_auth_level(0, 5));
+  assert(!is_snapshot_subindex_for_auth_level(16, 5));
+  assert(!is_snapshot_subindex_for_auth_level(1, 0));
+
+  // auth_level 1: only 1, 6, 11
+  for (uint8_t s = 1; s <= 15; s++) {
+    bool expected = (s == 1 || s == 6 || s == 11);
+    assert(is_snapshot_subindex_for_auth_level(s, 1) == expected);
+  }
+  // auth_level 3: 1..3, 6..8, 11..13 (9 of 15)
+  int count_l3 = 0;
+  for (uint8_t s = 1; s <= 15; s++) {
+    if (is_snapshot_subindex_for_auth_level(s, 3)) {
+      count_l3++;
+    }
+  }
+  assert(count_l3 == 9);
+  assert(!is_snapshot_subindex_for_auth_level(4, 3));
+  assert(!is_snapshot_subindex_for_auth_level(5, 3));
+  assert(is_snapshot_subindex_for_auth_level(4, 4));
+  assert(!is_snapshot_subindex_for_auth_level(5, 4));
+  assert(is_snapshot_subindex_for_auth_level(15, 5));
 }
 
 }  // namespace
@@ -272,6 +329,7 @@ int main() {
   test_time_of_day();
   test_sdo_abort_classification();
   test_direct_channel_transport();
+  test_snapshot_auth_level_filtering();
   std::printf("All bdr_protocol & bdr_transport unit tests passed!\n");
   return 0;
 }

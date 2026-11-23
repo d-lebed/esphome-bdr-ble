@@ -8,10 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Multi-Node `0x502B` Snapshot Support, `snapshot_nodes` Option & CAN Bus Node Probe (`0x1F85:00` + `0x2001:02`):**
-  - `STATE_READING_SNAPSHOT` now automatically reads `0x502B:01..15` across every distinct CAN `node_id` configured in YAML (defaulting to the hub's `node_id:` only when no secondary node entities are configured), giving secondary nodes (such as `node_id: 4` SCB extension boards or MK3/HMI panels) full `expected_len`, `number` limits, `select` option filtering, and per-node `BDR_SNAPSHOT[N4]:` log output, with fast bailout if a secondary node does not respond to `0x502B:01`.
-  - Added optional `snapshot_nodes:` list on `bdr_ble:` (e.g. `snapshot_nodes: [1, 4]`) to scan additional CAN nodes during discovery before configuring entities on them.
-  - When `log_snapshot: true`, reads CANopen `0x1F85:00` (node count `N`) on the default node, probes `0x2001:02` (`parApDeviceInfoType`) on the default node and slave nodes `3..min(N, 16)`, and logs the responding CAN node IDs with their hardware type codes (plus a configuration hint when secondary nodes are detected).
+- **On-Demand CAN Node & `0x502B` Discovery (`button` Platform & `bdr_ble.discover` Action):**
+  - Added `components/bdr_ble/button/` (`button: platform: bdr_ble`, `entity_category: diagnostic`) and the `bdr_ble.discover` ESPHome automation action (plus `BdrBleComponent::start_discovery()`).
+  - Triggering discovery probes CANopen `0x1F85:00` (node count `N`) and `0x2001:02` (`parApDeviceInfoType`) on the default node and slave nodes `3..min(N, 16)`, logs all responding CAN node IDs with hardware type codes, automatically reads `0x502B` across **every** detected node, and outputs chunked `BDR_SNAPSHOT:` / `BDR_SNAPSHOT[N<id>]:` log lines on demand instead of dumping on every BLE reconnect.
+- **Official-Sequence `0x502C` → `0x502D` Menu Structure Selection & Multi-Node `0x502B` Limits:**
+  - Before reading `0x502B` on each CAN node, `bdr_ble` now reads `0x502C:00` (`varApSupportedMenuStructure`), verifies V2 (`0x02`) support, and writes `0x502D:00 = 0x02` (`varApUsedMenuStructureVersion`), preventing `0x08000000` (General Error) rejections on cold-rebooted controllers (such as Confida 40).
+  - Filters `0x502B` sub-indices by configured `auth_level` (`((sub - 1) % 5) + 1 <= auth_level`) to avoid wasted NACK round-trips, retries timed-out or `0x08000000`-busy `0x502B` blocks once, and loads `0x502B` metadata quietly once per boot across all configured `node_id`s (with subsequent BLE reconnects entering `STATE_READY` immediately).
 - **NVS Flash Persistence for Learned `0x502B` Limits (`number` & `select`):**
   - `BdrBleNumber` and `BdrBleSelect` now persist learned `0x502B` hardware limits (`min`/`max`/`step` for `number`, allowed `[raw_min..raw_max]` bounds for `select`) to ESP32 NVS flash (`ESPPreferenceObject`, written only when values change) and restore them in `setup()` (`setup_priority::DATA`) before Home Assistant connects to the Native API.
   - Added optional `device_limits: true/false` (default `true`) per entity on `number:` and `select:` so users can opt out when enforcing custom manual YAML bounds or full enum option lists.
@@ -19,13 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rejects non-finite and out-of-range numeric writes locally against `0x502B` hardware bounds (or configured YAML bounds when `device_limits: false`) and immediately restores the current valid state in Home Assistant without sending invalid writes over BLE.
 
 ### Changed
+- **Deprecated `log_snapshot:` Hub Option:**
+  - `BDR_SNAPSHOT` output is now triggered on demand via `button: platform: bdr_ble` or the `bdr_ble.discover` action instead of automatically on every BLE reconnect (`log_snapshot:` remains accepted with a deprecation warning for backward compatibility).
 - **Encapsulated Entity Trait Updates & Subpackage Build Guards:**
   - Moved `0x502B` trait mutation and dynamic `select` option filtering out of `BdrDatapointRegistry` into `BdrBleNumber::apply_device_limits()` and `BdrBleSelect::apply_device_bounds()`.
   - Added component-specific `USE_BDR_BLE_NUMBER` and `USE_BDR_BLE_SELECT` compile defines so configuring an unrelated ESPHome `number:` or `select:` platform alongside `bdr_ble` never breaks header inclusion.
 
 ### Fixed
+- **4 kB DirectChannel RX Reassembly Limit:**
+  - Raised `DirectChannelTransport::MAX_RX_REASSEMBLY_LEN` from `2048` to `4096` bytes so large `0x502B` descriptor blocks (>2 kB, e.g. ~2.3 kB / 148 entries on Node 4) are no longer dropped during reassembly.
 - **Un-Sign-Extended Negative Minimums in `0x502B` Descriptors:**
-  - Properly sign-extends 8-bit (`I8`) and 16-bit (`I16`) negative minimums packed without sign-extension in the 32-bit `0x502B` descriptor field (e.g. `0x0000F63C` for `-2500` on Node 4 / SCB extension boards) instead of silently dropping those hardware bounds.
+  - Properly sign-extends 8-bit (`I8`) and 16-bit (`I16`) signed bounds packed without sign-extension in the 32-bit `0x502B` descriptor field (e.g. `0x0000F63C` for `-2500` on Node 4 / SCB extension boards) instead of silently dropping those hardware bounds.
 
 ---
 

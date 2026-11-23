@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esphome/core/automation.h"
 #include "esphome/core/defines.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -83,19 +84,14 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   void set_default_node_id(uint8_t node_id) { this->default_node_id_ = node_id; }
   uint8_t get_default_node_id() const { return this->default_node_id_; }
   void set_auth_level(uint8_t auth_level) { this->auth_level_ = auth_level; }
-  void set_log_snapshot(bool log_snapshot) { this->log_snapshot_ = log_snapshot; }
-  void add_snapshot_node(uint8_t node_id) {
-    for (uint8_t existing : this->configured_snapshot_nodes_) {
-      if (existing == node_id) {
-        return;
-      }
-    }
-    this->configured_snapshot_nodes_.push_back(node_id);
-  }
   void set_pin(uint32_t pin) {
     this->pin_ = pin;
     this->has_pin_ = true;
   }
+
+  /// Trigger an on-demand CAN node probe (0x1F85:00 + 0x2001:02) and full
+  /// 0x502B BDR_SNAPSHOT dump across every detected CAN node.
+  void start_discovery();
 
 #ifdef USE_SENSOR
   void register_sensor(sensor::Sensor *sens, uint16_t index, uint8_t sub_index,
@@ -184,15 +180,25 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
     CCCD_WAIT_WRITE_DESCR,
   };
 
+  enum SnapshotNodePhase : uint8_t {
+    SNAP_READ_STRUCT_VER = 0,
+    SNAP_WRITE_STRUCT_VER,
+    SNAP_READ_DESCRIPTORS,
+  };
+
   uint8_t resolve_node_id_(uint8_t node_id) const {
     return (node_id == 0xFF) ? this->default_node_id_ : node_id;
   }
 
   void reset_session_state_(bool clear_writes);
   void reset_active_transaction_();
-  void build_snapshot_nodes_();
+  void begin_snapshot_scan_(bool discovery);
+  void add_unique_snapshot_node_(uint8_t node_id);
+  void build_configured_snapshot_nodes_();
   void advance_can_node_probe_();
   void finish_can_node_probe_();
+  void begin_snapshot_descriptors_();
+  void advance_snapshot_node_();
   void advance_snapshot_step_(bool skip_remaining_for_node = false);
   void publish_status_(const char *msg);
   void resolve_gatt_handles_();
@@ -230,7 +236,6 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   bool cccd_manual_write_sent_{false};
   uint8_t default_node_id_{0x01};
   uint8_t auth_level_{4};
-  bool log_snapshot_{true};
   uint32_t pin_{0};
   bool has_pin_{false};
   bool pairing_failed_{false};
@@ -247,17 +252,20 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   uint8_t cccd_step_{0};
   uint8_t retry_count_{0};
   uint8_t consecutive_timeouts_{0};
-  std::vector<uint8_t> configured_snapshot_nodes_;
   std::vector<uint8_t> active_snapshot_nodes_;
   std::vector<uint8_t> can_probe_queue_;
   std::vector<DetectedCanNode> detected_can_nodes_;
   size_t snapshot_node_cursor_{0};
+  SnapshotNodePhase snapshot_phase_{SNAP_READ_STRUCT_VER};
   uint8_t snapshot_sub_idx_{1};
+  uint8_t snapshot_sub_retries_{0};
   size_t can_probe_cursor_{0};
   uint8_t can_probe_reported_count_{0};
   bool can_node_count_probed_{false};
   bool can_node_probe_done_{false};
-  bool snapshot_completed_{false};
+  bool boot_snapshot_done_{false};
+  bool discovery_mode_{false};
+  bool pending_discovery_{false};
 
   uint16_t h_direct_tx_{HANDLE_DIRECT_TX};
   uint16_t h_direct_rx_{HANDLE_DIRECT_RX};
@@ -288,6 +296,15 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *status_text_{nullptr};
 #endif
+};
+
+template <typename... Ts> class DiscoverAction : public Action<Ts...> {
+ public:
+  explicit DiscoverAction(BdrBleComponent *parent) : parent_(parent) {}
+  void play(const Ts &...x) override { this->parent_->start_discovery(); }
+
+ protected:
+  BdrBleComponent *parent_;
 };
 
 }  // namespace esphome::bdr_ble

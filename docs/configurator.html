@@ -1547,6 +1547,11 @@
         lines.push("  node_id: 1");
         lines.push("  auth_level: " + effectiveAuthLevel);
         lines.push("");
+        lines.push("button:");
+        lines.push("  - platform: bdr_ble");
+        lines.push("    bdr_ble_id: strateo_hub");
+        lines.push('    name: "Discover CAN Nodes & Snapshot"');
+        lines.push("");
         lines.push("switch:");
         lines.push("  - platform: ble_client");
         lines.push("    ble_client_id: strateo_ble");

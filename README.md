@@ -20,7 +20,7 @@ Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Blu
   - [Supported Boilers & Heat Pumps (`EHC-*`, `CU-*`, `SCB-*`)](https://d-lebed.github.io/esphome-bdr-ble/#compatibility)
   - [BLE Pairing & Requirements Guide](https://d-lebed.github.io/esphome-bdr-ble/#requirements)
   - [3-Step Sensor Discovery Workflow (`BDR_SNAPSHOT`)](https://d-lebed.github.io/esphome-bdr-ble/#discovery-workflow)
-  - [Configuration Reference (`sensor`, `text_sensor`, `number`, `select`)](https://d-lebed.github.io/esphome-bdr-ble/#configuration)
+  - [Configuration Reference (`sensor`, `binary_sensor`, `text_sensor`, `number`, `select`, `text`, `button`)](https://d-lebed.github.io/esphome-bdr-ble/#configuration)
   - [FAQ & Troubleshooting](https://d-lebed.github.io/esphome-bdr-ble/#faq)
 - **⚡ [Interactive ESPHome YAML Configurator](https://d-lebed.github.io/esphome-bdr-ble/configurator.html)**
   - Browse all **3,092 BDR Thermea OBD datapoints**, filter by controller board model (`EHC-08`, `CU-08`, etc.) or paste your live `BDR_SNAPSHOT:` log from ESPHome to generate ready-to-copy YAML.
@@ -39,7 +39,10 @@ Communicates directly with the appliance's built-in **MK3 / EHC-08 / CU-GH08 Blu
   - Configurable hardware access level (`auth_level: 1..4`: `1` = End User Safe, `2` = Installer Standard, `3` = Service, `4` = Lab/OEM).
 - **Read & Write Support:**
   - `sensor`, `binary_sensor` & `text_sensor`: Read temperatures, water pressure, boolean status flags (`HM012`, `HM013`, `AM015`), status enums, strings, and kWh energy consumption/delivery counters.
-  - `number`, `select` & `text`: Edit numeric setpoints (e.g., DHW comfort/eco temperature, flow setpoints), enum operating modes, and string labels (zone names `parZoneFriendlyName`, user activity names `parZoneFriendlyNameUserActivity`, installer info `AP089`/`AP090`) via `WriteConfirmedRequest 0x04` with automatic hardware range discovery from `0x502B` persisted in ESP32 NVS flash (opt out per entity with `device_limits: false`) and local out-of-range write rejection.
+  - `number`, `select` & `text`: Edit numeric setpoints (e.g., DHW comfort/eco temperature, flow setpoints), enum operating modes, and string labels (zone names `parZoneFriendlyName`, user activity names `parZoneFriendlyNameUserActivity`, installer info `AP089`/`AP090`) via `WriteConfirmedRequest 0x04` with automatic hardware range discovery from `0x502B` (via `0x502C` → `0x502D` V2 negotiation) persisted in ESP32 NVS flash (opt out per entity with `device_limits: false`) and local out-of-range write rejection.
+- **On-Demand Multi-Node CAN Discovery (`button` & `bdr_ble.discover`):**
+  - On first boot, quietly loads `0x502B` hardware limits for configured CAN nodes only (subsequent BLE reconnects enter polling immediately without snapshot spam).
+  - Pressing the `button: platform: bdr_ble` entity (or calling the `bdr_ble.discover` automation action) probes active CAN nodes (`0x1F85:00` + `0x2001:02`) and logs `BDR_SNAPSHOT:` / `BDR_SNAPSHOT[N<id>]:` lines for every detected board.
 - **Zero Firmware Bloat & High-Speed Batching:** Resolves menu codes (`AM027`, `DM001`, `AC005`, `DP070`) at compile time, batches requests via `GetListRequest (0x08)`, and automatically skips unsupported datapoints (`Auto-Skip`).
 
 ---
@@ -88,6 +91,11 @@ bdr_ble:
   pin: !secret strateo_ble_pin  # Omit 'pin:' for external GTW-IoT hubs (no PIN); wrap leading-zero PINs in quotes ("012345") in secrets.yaml
   node_id: 1
   auth_level: 4
+
+button:
+  - platform: bdr_ble
+    bdr_ble_id: boiler_hub
+    name: "Discover CAN Nodes & Snapshot"
 
 switch:
   - platform: ble_client

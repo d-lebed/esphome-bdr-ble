@@ -621,8 +621,8 @@
             <p data-i18n="feat5_desc">Combines datapoints sharing an <code>update_interval</code> into high-speed <code>GetListRequest (0x08)</code> batches and automatically disables unsupported parameters reported by the boiler.</p>
           </div>
           <div class="feature-card">
-            <h3 data-i18n="feat6_title">Live <code>0x502B</code> Appliance Snapshot</h3>
-            <p data-i18n="feat6_desc">Reads the boiler's internal menu descriptor table (<code>0x502B:01..15</code>) on connect, refines <code>number</code> min/max/step limits, and outputs <code>BDR_SNAPSHOT:</code> lines for the <a href="./configurator.html">YAML Configurator</a>.</p>
+            <h3 data-i18n="feat6_title">On-Demand CAN &amp; <code>0x502B</code> Discovery</h3>
+            <p data-i18n="feat6_desc">Quietly loads <code>0x502B</code> hardware limits on first boot (persisted to NVS flash for <code>number</code> &amp; <code>select</code>) and provides a <code>button</code> / <code>bdr_ble.discover</code> action to detect all active CAN nodes and dump <code>BDR_SNAPSHOT:</code> lines for the <a href="./configurator.html">YAML Configurator</a>.</p>
           </div>
         </div>
       </section>
@@ -796,6 +796,11 @@ bdr_ble:
   node_id: 1
   auth_level: 4
 
+button:
+  - platform: bdr_ble
+    bdr_ble_id: boiler_hub
+    name: "Discover CAN Nodes & Snapshot"
+
 switch:
   - platform: ble_client
     ble_client_id: boiler_ble
@@ -815,14 +820,18 @@ text_sensor:
           Because BDR Thermea's Object Dictionary contains <strong>3,092 datapoints</strong> across dozens of appliance types, each boiler only implements the subset matching its installed hardware. Follow this 3-step workflow to configure your exact appliance:
         </p>
 
-        <h3 data-i18n="disc_s1_title">Step 1: Flash the Minimal Config &amp; Capture <code>BDR_SNAPSHOT</code></h3>
+        <h3 data-i18n="disc_s1_title">Step 1: Flash the Minimal Config &amp; Press the Discover Button</h3>
         <p data-i18n="disc_s1_desc">
-          Flash the Quick Start configuration above (with no sensors yet) and open the ESPHome logs. Right after authenticating, <code>bdr_ble</code> reads the boiler's internal menu descriptor table (<code>0x502B:01..15</code>) and prints <code>BDR_SNAPSHOT:</code> lines:
+          Flash the Quick Start configuration above, open the ESPHome logs, and press the <strong>Discover CAN Nodes &amp; Snapshot</strong> button in Home Assistant (or trigger the <code>bdr_ble.discover</code> action). <code>bdr_ble</code> probes active CAN bus nodes (<code>0x1F85:00</code> + <code>0x2001:02</code>), selects V2 descriptors (<code>0x502C</code> → <code>0x502D</code>), reads <code>0x502B</code> for every detected board, and prints <code>BDR_SNAPSHOT:</code> lines:
         </p>
-        <pre><code>[I][bdr_ble:425]: === Appliance Snapshot (370 supported datapoints from 0x502B:01..15) ===
-[I][bdr_ble:439]: BDR_SNAPSHOT:3011:00,3012:00,3013:00,3654:01,3655:01,3661:01,...
-[I][bdr_ble:439]: BDR_SNAPSHOT:5013:00,5016:00,501A:00,501E:00,5044:00,5045:00,...
-[I][bdr_ble:448]: === End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===</code></pre>
+        <pre><code>[I][bdr_ble]: CAN bus nodes present (0x1F85:00=4): [1 (type=...), 4 (type=...)] — scanning 0x502B snapshot on all detected nodes
+[I][bdr_ble]: === Appliance Snapshot (290 supported datapoints from 0x502B:01..15) ===
+[I][bdr_ble]: BDR_SNAPSHOT:3011:00@1,3012:00@1,3013:00@1,3654:01@1,3655:01@1,...
+[I][bdr_ble]: BDR_SNAPSHOT:5013:00@1,5016:00@1,501A:00@1,501E:00@1,5044:00@1,...
+[I][bdr_ble]: === End of Appliance Snapshot (paste BDR_SNAPSHOT lines into configurator.html) ===
+[I][bdr_ble]: === Appliance Snapshot (Node 4: 10 supported datapoints from 0x502B:01..15) ===
+[I][bdr_ble]: BDR_SNAPSHOT[N4]:303E:00@1,3042:00@1,309E:00@1,3047:00@1,...
+[I][bdr_ble]: === End of Appliance Snapshot (Node 4) ===</code></pre>
 
         <h3 data-i18n="disc_s2_title">Step 2: Paste the Snapshot into the Interactive YAML Configurator</h3>
         <ol data-i18n="disc_s2_steps">
@@ -1019,6 +1028,19 @@ button:
       - parameter: parZoneFriendlyNameUserActivity
         sub_index: 1
         name: "Activity 1 Name"</code></pre>
+
+        <h3 data-i18n="cfg_button_title">8. On-Demand Discovery (<code>button</code> &amp; <code>bdr_ble.discover</code> Action)</h3>
+        <p data-i18n="cfg_button_desc">
+          Triggers an on-demand CAN bus node scan (<code>0x1F85:00</code> + <code>0x2001:02</code>) and logs <code>BDR_SNAPSHOT:</code> / <code>BDR_SNAPSHOT[N&lt;id&gt;]:</code> for every detected node, instead of dumping snapshots on every BLE reconnect. Can be configured as a diagnostic <code>button</code> entity or invoked from any ESPHome automation via <code>bdr_ble.discover</code>:
+        </p>
+        <pre><code>button:
+  - platform: bdr_ble
+    bdr_ble_id: boiler_hub              # Optional when only one hub is defined
+    name: "Discover CAN Nodes &amp; Snapshot"
+
+# Or trigger from any ESPHome automation / template button:
+#   on_press:
+#     - bdr_ble.discover: boiler_hub</code></pre>
       </section>
 
       <section id="faq">

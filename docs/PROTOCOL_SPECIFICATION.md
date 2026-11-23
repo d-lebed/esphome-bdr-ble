@@ -380,7 +380,11 @@ Note: Configuration parameters (`par...`) are in range `0x2000..0x3FFF`; live me
 | `0x5086` | `0x00` | `AC009` | `varApDhwEnergyDelivery` | Thermal energy delivered for DHW | `U32` | `1` | `kWh` |
 | `0x507A` | `0x00` | `AC019` | `varApBackupEnergyDelivery` | Thermal energy delivered by electric backup heater | `U32` | `1` | `kWh` |
 | `0x5089` | `0x00` | — | `varApTotalEnergyDelivery` | Total thermal energy produced (CH + DHW) | `U32` | `1` | `kWh` |
+| `0x1F85` | `0x00` | — | `canVendorIdentification` | Registered CANopen node count (`N`) on the bus | `U8` | `1` | — |
+| `0x2001` | `0x02` | — | `parApDeviceInfoType` | Controller board hardware type code | `U16` | `1` | — |
 | `0x502B` | `01..15` | — | `varApMenuDescriptor` | Binary array of 15-byte menu descriptor structs | `OctetString` | — | — |
+| `0x502C` | `0x00` | — | `varApSupportedMenuStructure` | Supported menu descriptor format version bytes (`0x02` = V2) | `U8` | `1` | — |
+| `0x502D` | `0x00` | — | `varApUsedMenuStructureVersion` | Active menu descriptor format (`0x02` selected before `0x502B`) | `U8` | `1` | — |
 | `0x582A` | `0x00` | `EM020` | `varApBatteryStatus` | Battery level and status | `Struct` | — | — |
 
 

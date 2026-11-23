@@ -77,6 +77,11 @@ bdr_ble:
   node_id: 1
   auth_level: 4
 
+button:
+  - platform: bdr_ble
+    bdr_ble_id: boiler_hub
+    name: "Discover CAN Nodes & Snapshot"
+
 switch:
   - platform: ble_client
     ble_client_id: boiler_ble

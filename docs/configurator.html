@@ -1463,7 +1463,8 @@
 
     function formatSensorName(dp, prefixCode) {
       const loc = getLocalizedDp(dp);
-      const title = loc.title || dp.baseTitle || dp.cleanLabel || dp.cleanDesc || dp.name;
+      const rawTitle = loc.title || dp.baseTitle || dp.cleanLabel || dp.cleanDesc || dp.name;
+      const title = String(rawTitle || "").replace(/\//g, "\u2044");
       if (prefixCode && dp.code) {
         return dp.code + " " + title;
       }

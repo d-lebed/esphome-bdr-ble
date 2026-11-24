@@ -254,7 +254,9 @@ def infer_sensor_metadata(dp: dict[str, Any]) -> dict[str, Any]:
         meta["unit_of_measurement"] = unit_raw
 
     desc = dp.get("label", "") or dp.get("desc", "") or dp.get("name", "")
-    meta["default_name"] = desc.strip()
+    # ESPHome reserves '/' in entity names for sub-device hierarchy (error in 2027.7.0+);
+    # replace ASCII '/' with Unicode Fraction Slash '\u2044' in default entity names.
+    meta["default_name"] = desc.strip().replace("/", "\u2044")
     return meta
 
 

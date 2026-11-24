@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Raised `DirectChannelTransport::MAX_RX_REASSEMBLY_LEN` from `2048` to `4096` bytes so large `0x502B` descriptor blocks (>2 kB, e.g. ~2.3 kB / 148 entries on Node 4) are no longer dropped during reassembly.
 - **Un-Sign-Extended Negative Minimums in `0x502B` Descriptors:**
   - Properly sign-extends 8-bit (`I8`) and 16-bit (`I16`) signed bounds packed without sign-extension in the 32-bit `0x502B` descriptor field (e.g. `0x0000F63C` for `-2500` on Node 4 / SCB extension boards) instead of silently dropping those hardware bounds.
+- **Slash Character (`'/'`) Sanitization in Default & Generated Entity Names:**
+  - Replaced ASCII `'/'` with Unicode Fraction Slash (`'⁄'`, `U+2044`) in `obd.py` default entity names and in `docs/configurator.html` generated `name:` fields so catalog parameters containing `'/'` (e.g. `GP010`, `AP025`, `AP068`, `HP017`, `SP275`) do not trigger ESPHome sub-device hierarchy warnings or fail schema validation in ESPHome `2027.7.0+`.
 
 ---
 

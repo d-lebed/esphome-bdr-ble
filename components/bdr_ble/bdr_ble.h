@@ -292,6 +292,7 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
   std::deque<PendingWrite> write_queue_;
   PendingReadback pending_readback_;
   bool pending_rub_auth_tx_{false};
+  bool pending_rub_reauth_{false};
   uint8_t pending_rub_auth_req_[16]{};
   ActiveRequest active_req_;
   int active_group_idx_{-1};

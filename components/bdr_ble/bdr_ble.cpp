@@ -3,17 +3,6 @@
 #include <cstdio>
 #include <cstring>
 
-#ifdef USE_ESP32
-#if __has_include("bta/bta_gatt_api.h") && __has_include("bta/bta_api.h")
-#include "bta/bta_api.h"
-#include "bta/bta_gatt_api.h"
-#else
-extern "C" void BTA_GATTC_WriteCharValue(uint16_t conn_id, uint16_t handle,
-                                         uint8_t write_type, uint16_t len,
-                                         uint8_t *p_value, uint8_t auth_req);
-#endif
-#endif
-
 namespace esphome::bdr_ble {
 
 void BdrBleComponent::setup() {
@@ -282,6 +271,7 @@ void BdrBleComponent::reset_session_state_(bool clear_writes) {
   this->cooldown_until_ms_ = 0;
   this->pending_readback_ = {};
   this->pending_rub_auth_tx_ = false;
+  this->pending_rub_reauth_ = false;
   if (clear_writes) {
     this->write_queue_.clear();
   }
@@ -624,17 +614,16 @@ void BdrBleComponent::send_zero_length_write_(uint16_t char_handle) {
   ESP_LOGI(TAG, "Triggering Service 3 challenge (0-byte write on handle %u)",
            char_handle);
 #ifdef USE_ESP32
-  esp_err_t err = esp_ble_gattc_write_char(
+  // esp_ble_gattc_write_char rejects value_len == 0 with ESP_ERR_INVALID_ARG,
+  // whereas esp_ble_gattc_write_char_descr accepts value_len == 0 and emits
+  // the identical 0-byte ATT Write Request (opcode 0x12) on the attribute handle.
+  esp_err_t err = esp_ble_gattc_write_char_descr(
       this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
       char_handle, 0, nullptr, ESP_GATT_WRITE_TYPE_RSP,
       ESP_GATT_AUTH_REQ_NONE);
   if (err != ESP_OK) {
-    uint16_t bta_conn_id = static_cast<uint16_t>(
-        (this->parent()->get_conn_id() << 8) |
-        (this->parent()->get_gattc_if() & 0xFF));
-    uint8_t dummy = 0;
-    BTA_GATTC_WriteCharValue(bta_conn_id, char_handle, 2 /* GATT_WRITE */, 0,
-                             &dummy, 0);
+    ESP_LOGW(TAG, "0-byte GATT trigger write failed on handle %u: %d",
+             char_handle, err);
   }
 #endif
 }
@@ -844,6 +833,7 @@ void BdrBleComponent::start_rub_auth_(const char *status_msg) {
   this->active_item_idx_ = 0;
   this->pending_readback_ = {};
   this->pending_rub_auth_tx_ = false;
+  this->pending_rub_reauth_ = false;
   if (this->get_list_stage_ != 2) {
     this->get_list_stage_ = 0;
   }
@@ -1637,10 +1627,11 @@ void BdrBleComponent::handle_access_denied_(uint8_t node_id, uint16_t index,
   if (known_accessible && this->state_ == STATE_READY) {
     ESP_LOGW(TAG,
              "Datapoint 0x%04X:%02X returned Unsupported Access (0x06010000) after previously succeeding; "
-             "RUB session reset -> re-authenticating",
+             "RUB session reset -> scheduling re-authentication",
              index, sub_index);
     this->registry_.trigger_immediate_repoll_for_node(node_id);
-    this->start_rub_auth_("Re-authenticating CAN-BUS");
+    this->active_req_ = {};
+    this->pending_rub_reauth_ = true;
     return;
   }
 
@@ -1730,9 +1721,9 @@ void BdrBleComponent::handle_get_list_response_(const uint8_t *payload,
         case SdoAbortCategory::AUTH_OR_ACCESS_DENIED:
           this->handle_access_denied_(node_id, index, sub_index, status,
                                       abort_code, true);
-          // If handle_access_denied_() triggered RUB re-authentication, stop processing
+          // If handle_access_denied_() scheduled RUB re-authentication, stop processing
           // the remaining items in this batch so they are not downgraded to single_read_only.
-          if (this->state_ != STATE_READY) {
+          if (this->state_ != STATE_READY || this->pending_rub_reauth_) {
             return;
           }
           break;
@@ -2071,6 +2062,12 @@ void BdrBleComponent::loop() {
       } else {
         return;
       }
+    }
+
+    if (this->pending_rub_reauth_) {
+      this->pending_rub_reauth_ = false;
+      this->start_rub_auth_("Re-authenticating CAN-BUS");
+      return;
     }
 
     // Dynamic RX liveness watchdog scaled to the shortest active poll interval

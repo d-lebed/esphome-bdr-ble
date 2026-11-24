@@ -79,7 +79,7 @@ tests/
    - Wait for `ESP_GAP_BLE_AUTH_CMPL_EVT` before writing `0x0001` to CCCD handles `{34, 39, 21, 24, 28}`.
 2. **Zero-Length GATT Write on Handle `31` (Service 3 Trigger):**
    - ESP-IDF's `esp_ble_gattc_write_char` rejects `value_len == 0` with `ESP_ERR_INVALID_ARG`.
-   - Always trigger Service 3 challenge using Bluedroid's `BTA_GATTC_WriteCharValue(bta_conn_id, 31, 2, 0, &dummy, 0)` where `bta_conn_id = (conn_id << 8) | (gattc_if & 0xFF)`.
+   - Always trigger Service 3 challenge using ESP-IDF's public `esp_ble_gattc_write_char_descr(gattc_if, conn_id, handle, 0, nullptr, ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE)`, which accepts `value_len == 0` and emits the 0-byte ATT Write Request (`0x12`) without private Bluedroid headers.
 3. **32-Round TEA Cipher (`0x15EFA43F`):**
    - **Block input (`v0, v1`)**: `[auth_level, auth_level]` (`[4, 4]`).
    - **128-bit Key (`k0..k3`)**: `[0x15EFA43F, id1, id2, auth_level]`.

@@ -376,6 +376,18 @@
     .lvl-2 { background: rgba(56, 189, 248, 0.16); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
     .lvl-3 { background: rgba(245, 158, 11, 0.16); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
     .lvl-4 { background: rgba(244, 63, 94, 0.16); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+    .node-pill {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-top: 3px;
+      background: rgba(168, 85, 247, 0.16);
+      color: #d8b4fe;
+      border: 1px solid rgba(168, 85, 247, 0.35);
+    }
     .save-status {
       font-size: 11.5px;
       color: #4ade80;
@@ -550,7 +562,10 @@
         </div>
         <div id="model-info-bar" class="model-info-bar" style="display:none;"></div>
         <div class="filter-row">
-          <input type="text" id="snapshot-input" style="flex:1;" placeholder="Optional: Paste BDR_SNAPSHOT:... lines from ESPHome logs to show only datapoints &amp; levels reported by your boiler (0x502B)..." oninput="onSnapshotInput()" />
+          <input type="text" id="snapshot-input" style="flex:1;" placeholder="Optional: Paste BDR_SNAPSHOT:... or BDR_SNAPSHOT[N4]:... lines from ESPHome logs to show only datapoints &amp; levels reported by your appliance (0x502B)..." oninput="onSnapshotInput()" />
+          <select id="node-filter" style="display:none; min-width:130px;" onchange="onFilterChange()">
+            <option value="ALL">All CAN Nodes</option>
+          </select>
           <span id="snapshot-badge" style="display:none; font-size:12px; color:#4ade80; font-weight:600;"></span>
           <button id="snapshot-clear-btn" style="display:none;" onclick="clearSnapshot()">Clear Snapshot</button>
         </div>
@@ -822,6 +837,7 @@
         ...dp,
         id: idx,
         key,
+        nodeId: 1,
         hexIdx,
         hexSub,
         fgs,
@@ -846,6 +862,7 @@
 
     const selected = new Map();
     let activeSnapshotKeys = null;
+    let activeSnapshotNodes = [];
     let currentViewMode = "ALL";
     let suppressSave = false;
 
@@ -864,6 +881,7 @@
           level: document.getElementById("level-filter").value,
           fg: document.getElementById("fg-filter").value,
           snapshot: document.getElementById("snapshot-input").value,
+          node: document.getElementById("node-filter").value,
           search: document.getElementById("search-input").value,
           subsys: document.getElementById("subsystem-filter").value,
           cat: document.getElementById("category-filter").value,
@@ -910,6 +928,12 @@
         if (state.optAuthLevel) document.getElementById("opt-auth-level").value = state.optAuthLevel;
 
         parseSnapshotText(document.getElementById("snapshot-input").value);
+        if (state.node) {
+          const nodeSel = document.getElementById("node-filter");
+          if ([...nodeSel.options].some(o => o.value === state.node)) {
+            nodeSel.value = state.node;
+          }
+        }
 
         selected.clear();
         if (Array.isArray(state.selected)) {
@@ -955,42 +979,76 @@
       saveStateToStorage();
     }
 
+    function makeNodeKey(nodeId, fullKey) {
+      return nodeId === 1 ? fullKey : ("N" + nodeId + ":" + fullKey);
+    }
+
     function parseSnapshotText(rawText) {
       const raw = (rawText || "").trim();
       const badge = document.getElementById("snapshot-badge");
       const clearBtn = document.getElementById("snapshot-clear-btn");
+      const nodeSelect = document.getElementById("node-filter");
+      const prevNodeVal = nodeSelect ? nodeSelect.value : "ALL";
 
-      // Remove any previously synthesized array sub-index clones
+      // Remove any previously synthesized array or multi-node clones
       for (let i = DATAPOINTS.length - 1; i >= 0; i--) {
-        if (DATAPOINTS[i].isArrayClone) {
+        if (DATAPOINTS[i].isArrayClone || DATAPOINTS[i].isNodeClone) {
           DATAPOINTS.splice(i, 1);
         } else {
           DATAPOINTS[i].lvl = DATAPOINTS[i].baseLvl;
+          DATAPOINTS[i].nodeId = 1;
         }
       }
 
       if (!raw) {
         activeSnapshotKeys = null;
+        activeSnapshotNodes = [];
         badge.style.display = "none";
         clearBtn.style.display = "none";
+        if (nodeSelect) {
+          nodeSelect.style.display = "none";
+          nodeSelect.value = "ALL";
+        }
         return;
       }
 
       // Strip "from 0x502B:01..15" header text so 0x502B:01 is not mistaken for a datapoint
       const cleanedRaw = raw.replace(/0x502B:[0-9a-fA-F]{1,2}\.\.[0-9a-fA-F]{1,2}/gi, "");
-      const re = /(?:0x)?([0-9a-fA-F]{4}):(?:0x)?([0-9a-fA-F]{1,2})(?:@([1-5]))?/g;
       const keys = new Set();
       const snapLevels = new Map();
-      let m;
-      while ((m = re.exec(cleanedRaw)) !== null) {
-        const hi = "0x" + m[1].toUpperCase().padStart(4, "0");
-        const sub = "0x" + m[2].toUpperCase().padStart(2, "0");
-        if (hi === "0x502B") continue;
-        const fullKey = hi + ":" + sub;
-        keys.add(fullKey);
-        if (m[3]) {
-          snapLevels.set(fullKey, Number(m[3]));
-          if (!snapLevels.has(hi)) snapLevels.set(hi, Number(m[3]));
+      const nodeSet = new Set();
+      const entries = [];
+
+      // Split on BDR_SNAPSHOT[N<id>]: / BDR_SNAPSHOT: markers (or newlines) so each chunk keeps its CAN node context
+      const lines = cleanedRaw.split(/\r?\n|(?=BDR_SNAPSHOT(?:\[N\d+\])?:)/i);
+      const prefixRe = /BDR_SNAPSHOT(?:\[N(\d+)\])?:/i;
+      const itemRe = /(?:0x)?([0-9a-fA-F]{4}):(?:0x)?([0-9a-fA-F]{1,2})(?:@([1-5]))?/g;
+      let currentNode = 1;
+
+      for (const line of lines) {
+        const pm = prefixRe.exec(line);
+        if (pm) {
+          currentNode = pm[1] ? Number(pm[1]) : 1;
+        }
+        itemRe.lastIndex = 0;
+        let m;
+        while ((m = itemRe.exec(line)) !== null) {
+          const hi = "0x" + m[1].toUpperCase().padStart(4, "0");
+          const sub = "0x" + m[2].toUpperCase().padStart(2, "0");
+          if (hi === "0x502B") continue;
+          const fullKey = hi + ":" + sub;
+          const nodeKey = makeNodeKey(currentNode, fullKey);
+          const lvl = m[3] ? Number(m[3]) : null;
+          nodeSet.add(currentNode);
+          if (!keys.has(nodeKey)) {
+            keys.add(nodeKey);
+            entries.push({ nodeId: currentNode, hi, subHex: sub, fullKey, nodeKey });
+          }
+          if (lvl) {
+            snapLevels.set(nodeKey, lvl);
+            const nodeIdxKey = makeNodeKey(currentNode, hi);
+            if (!snapLevels.has(nodeIdxKey)) snapLevels.set(nodeIdxKey, lvl);
+          }
         }
       }
 
@@ -1000,38 +1058,78 @@
         if (!byHexIdx.has(dp.hexIdx)) byHexIdx.set(dp.hexIdx, dp);
       }
 
-      // Dynamically synthesize array element rows (SubIndex >= 2) if base index exists in catalog
-      for (const fullKey of keys) {
-        if (!byKey.has(fullKey)) {
-          const [hi, subHex] = fullKey.split(":");
-          const subNum = parseInt(subHex, 16);
-          const baseDp = byHexIdx.get(hi);
-          if (baseDp && subNum >= 2) {
-            const suffix = " [" + subNum + "]";
-            const clone = {
-              ...baseDp,
-              id: DATAPOINTS.length,
-              sub: subNum,
-              hexSub: subHex,
-              key: fullKey,
-              isArrayClone: true,
-              explicitSubIndex: subNum,
-              cleanLabel: (baseDp.cleanLabel || baseDp.cleanDesc) + suffix,
-              baseTitle: (baseDp.baseTitle || baseDp.cleanLabel || baseDp.cleanDesc) + suffix,
-              lvl: snapLevels.get(fullKey) || snapLevels.get(hi) || baseDp.baseLvl,
-              searchBlob: baseDp.searchBlob + " " + fullKey.toLowerCase()
-            };
-            DATAPOINTS.push(clone);
-            byKey.set(fullKey, clone);
-          }
-        }
+      // Dynamically synthesize array element rows (SubIndex >= 2) and secondary CAN node rows (nodeId !== 1)
+      for (const entry of entries) {
+        const { nodeId, hi, subHex, fullKey, nodeKey } = entry;
+        if (byKey.has(nodeKey)) continue;
+        const subNum = parseInt(subHex, 16);
+        const exactBase = byKey.get(fullKey);
+        const idxBase = byHexIdx.get(hi);
+        const baseDp = exactBase || (subNum >= 2 ? idxBase : null);
+        if (!baseDp) continue;
+
+        const isArr = !exactBase && subNum >= 2;
+        const suffix = isArr ? (" [" + subNum + "]") : "";
+        const nodeSearch = nodeId !== 1 ? (" node" + nodeId + " n" + nodeId + " " + nodeKey.toLowerCase()) : "";
+        const clone = {
+          ...baseDp,
+          id: DATAPOINTS.length,
+          nodeId,
+          sub: subNum,
+          hexSub: subHex,
+          key: nodeKey,
+          isArrayClone: isArr,
+          isNodeClone: nodeId !== 1,
+          explicitSubIndex: isArr ? subNum : baseDp.explicitSubIndex,
+          cleanLabel: (baseDp.cleanLabel || baseDp.cleanDesc) + suffix,
+          baseTitle: (baseDp.baseTitle || baseDp.cleanLabel || baseDp.cleanDesc) + suffix,
+          lvl: snapLevels.get(nodeKey) || snapLevels.get(makeNodeKey(nodeId, hi)) || baseDp.baseLvl,
+          searchBlob: baseDp.searchBlob + " " + fullKey.toLowerCase() + nodeSearch
+        };
+        DATAPOINTS.push(clone);
+        byKey.set(nodeKey, clone);
       }
 
       for (const dp of DATAPOINTS) {
+        const nodeIdxKey = makeNodeKey(dp.nodeId || 1, dp.hexIdx);
         if (snapLevels.has(dp.key)) {
           dp.lvl = snapLevels.get(dp.key);
-        } else if (snapLevels.has(dp.hexIdx)) {
-          dp.lvl = snapLevels.get(dp.hexIdx);
+        } else if (snapLevels.has(nodeIdxKey)) {
+          dp.lvl = snapLevels.get(nodeIdxKey);
+        }
+      }
+
+      // Remove any selected secondary-node or array clones that no longer exist in DATAPOINTS
+      for (const selKey of [...selected.keys()]) {
+        if (!byKey.has(selKey)) {
+          selected.delete(selKey);
+        }
+      }
+
+      activeSnapshotNodes = [...nodeSet].sort((a, b) => a - b);
+      if (nodeSelect) {
+        if (activeSnapshotNodes.length > 1 || (activeSnapshotNodes.length === 1 && activeSnapshotNodes[0] !== 1)) {
+          nodeSelect.innerHTML = "";
+          const allOpt = document.createElement("option");
+          allOpt.value = "ALL";
+          allOpt.textContent = "All CAN Nodes (" + activeSnapshotNodes.map(n => "N" + n).join(", ") + ")";
+          nodeSelect.appendChild(allOpt);
+          for (const n of activeSnapshotNodes) {
+            const countOnNode = entries.filter(e => e.nodeId === n && byKey.has(e.nodeKey)).length;
+            const opt = document.createElement("option");
+            opt.value = String(n);
+            opt.textContent = "Node " + n + " (" + countOnNode + ")";
+            nodeSelect.appendChild(opt);
+          }
+          nodeSelect.style.display = "inline-block";
+          if (prevNodeVal !== "ALL" && activeSnapshotNodes.includes(Number(prevNodeVal))) {
+            nodeSelect.value = prevNodeVal;
+          } else {
+            nodeSelect.value = "ALL";
+          }
+        } else {
+          nodeSelect.style.display = "none";
+          nodeSelect.value = "ALL";
         }
       }
 
@@ -1042,9 +1140,12 @@
           if (byKey.has(k)) matchedCount++;
         }
         const structHidden = keys.size - matchedCount;
+        const nodesNote = activeSnapshotNodes.length > 1
+          ? (" across Nodes " + activeSnapshotNodes.join(", "))
+          : (activeSnapshotNodes[0] && activeSnapshotNodes[0] !== 1 ? (" on Node " + activeSnapshotNodes[0]) : "");
         badge.textContent = structHidden > 0
-          ? ("Snapshot active: " + keys.size + " boiler items (" + matchedCount + " in table, " + structHidden + " schedule/table Structs hidden)")
-          : ("Snapshot active: " + keys.size + " boiler datapoints");
+          ? ("Snapshot active" + nodesNote + ": " + keys.size + " items (" + matchedCount + " in table, " + structHidden + " schedule/table Structs hidden)")
+          : ("Snapshot active" + nodesNote + ": " + keys.size + " datapoints");
         badge.style.display = "inline";
         clearBtn.style.display = "inline-block";
       } else {
@@ -1199,6 +1300,7 @@
       const modelVal = document.getElementById("model-filter").value;
       const levelVal = document.getElementById("level-filter").value;
       const fgVal = document.getElementById("fg-filter").value;
+      const nodeVal = document.getElementById("node-filter").value;
       const subsys = document.getElementById("subsystem-filter").value;
       const cat = document.getElementById("category-filter").value;
       const cls = document.getElementById("class-filter").value;
@@ -1211,6 +1313,7 @@
       return DATAPOINTS.filter(dp => {
         if (activeSnapshotKeys) {
           if (!activeSnapshotKeys.has(dp.key)) return false;
+          if (nodeVal && nodeVal !== "ALL" && String(dp.nodeId || 1) !== nodeVal) return false;
         } else {
           if (modelFgSet && !dp.fgs.some(fg => modelFgSet.has(fg))) return false;
           if (onlyCoded && !dp.code && !dp.isWritableString && cat !== "STRING_TIME") return false;
@@ -1393,7 +1496,11 @@
         } else {
           html += "<span class=\"code-pill\" style=\"opacity:0.55\">" + dp.hexIdx + "</span>";
         }
-        html += "<span class=\"hex-sub\">" + dp.hexIdx + ":" + hexSubPad + "</span></td>";
+        html += "<span class=\"hex-sub\">" + dp.hexIdx + ":" + hexSubPad + "</span>";
+        if (dp.nodeId && dp.nodeId !== 1) {
+          html += "<span class=\"node-pill\" title=\"Secondary CAN Node " + dp.nodeId + " (node_id: " + dp.nodeId + ")\">Node " + dp.nodeId + "</span>";
+        }
+        html += "</td>";
 
         html += "<td>";
         if (loc.label) {
@@ -1465,10 +1572,11 @@
       const loc = getLocalizedDp(dp);
       const rawTitle = loc.title || dp.baseTitle || dp.cleanLabel || dp.cleanDesc || dp.name;
       const title = String(rawTitle || "").replace(/\//g, "\u2044");
+      const nodeSuffix = (dp.nodeId && dp.nodeId !== 1) ? (" (Node " + dp.nodeId + ")") : "";
       if (prefixCode && dp.code) {
-        return dp.code + " " + title;
+        return dp.code + " " + title + nodeSuffix;
       }
-      return title;
+      return title + nodeSuffix;
     }
 
     function computeRequiredAuthLevel() {
@@ -1570,12 +1678,16 @@
         if (includeComments) {
           const unitNote = dp.unit ? (", " + dp.unit) : "";
           const lvlNote = dp.lvl ? (", L" + dp.lvl) : "";
+          const nodeNote = (dp.nodeId && dp.nodeId !== 1) ? ("[N" + dp.nodeId + "] ") : "";
           const titleNote = loc.label || dp.cleanLabel || dp.cleanDesc;
-          lines.push("      # " + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + unitNote + lvlNote + ") — " + titleNote);
+          lines.push("      # " + nodeNote + dp.hexIdx + ":" + dp.sub.toString(16).toUpperCase().padStart(2, "0") + " " + dp.name + " (" + dp.type + unitNote + lvlNote + ") — " + titleNote);
         }
         lines.push("      - parameter: " + paramKey);
         if (dp.explicitSubIndex) {
           lines.push("        sub_index: " + dp.explicitSubIndex);
+        }
+        if (dp.nodeId && dp.nodeId !== 1) {
+          lines.push("        node_id: " + dp.nodeId);
         }
         if (includeNames) {
           const safeName = formatSensorName(dp, prefixCode).split('"').join('\\"');

@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added optional `device_limits: true/false` (default `true`) per entity on `number:` and `select:` so users can opt out when enforcing custom manual YAML bounds or full enum option lists.
 - **Local Range Guard in `BdrBleNumber::control()`:**
   - Rejects non-finite and out-of-range numeric writes locally against `0x502B` hardware bounds (or configured YAML bounds when `device_limits: false`) and immediately restores the current valid state in Home Assistant without sending invalid writes over BLE.
+- **Multi-Node `BDR_SNAPSHOT[N<id>]:` Support in Web Configurator (`docs/configurator.html`):**
+  - Parses secondary-node `BDR_SNAPSHOT[N<id>]:` lines alongside default-node `BDR_SNAPSHOT:` lines, synthesizes per-node datapoint rows with `Node <id>` badges and a CAN node filter dropdown, appends `(Node <id>)` to generated secondary-node entity names to prevent duplicate Home Assistant entity names, and automatically emits `node_id: <id>` in the generated ESPHome YAML.
 
 ### Changed
 - **Deprecated `log_snapshot:` Hub Option:**

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.6.0] - 2026-11-24
+
 ### Added
 - **On-Demand CAN Node & `0x502B` Discovery (`button` Platform & `bdr_ble.discover` Action):**
   - Added `components/bdr_ble/button/` (`button: platform: bdr_ble`) and the `bdr_ble.discover` ESPHome automation action (plus `BdrBleComponent::start_discovery()`).
@@ -224,7 +228,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.3.1...v1.4.0

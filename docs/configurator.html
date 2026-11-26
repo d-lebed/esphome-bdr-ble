@@ -811,7 +811,8 @@
       const isWritableEnum = dp.cls === "Parameter" && !!dp.rw && dp.type === "Enum";
       const isWritableNumeric = dp.cls === "Parameter" && !!dp.rw && ["U8", "I8", "U16", "I16", "U32", "I32"].includes(dp.type);
       const isWritableString = dp.cls === "Parameter" && !!dp.rw && dp.type === "VisibleString";
-      const isWritable = isWritableEnum || isWritableNumeric || isWritableString;
+      const isWritableDateTime = dp.cls === "Parameter" && !!dp.rw && dp.type === "TimeOfDay";
+      const isWritable = isWritableEnum || isWritableNumeric || isWritableString || isWritableDateTime;
       const BOOLEAN_ENUMS = new Set([
         "OffOn", "InactiveActive", "YesNo", "EnableDisable",
         "AvailableNotAvailable", "CoolingAllowed", "CompressorLocked",
@@ -826,6 +827,7 @@
       if (isWritableEnum) defaultPlatform = "select";
       else if (isWritableNumeric) defaultPlatform = "number";
       else if (isWritableString) defaultPlatform = "text";
+      else if (isWritableDateTime) defaultPlatform = "datetime";
       else if (isBooleanEnum) defaultPlatform = "binary_sensor";
       else if (dp.type === "VisibleString" || dp.type === "TimeOfDay") defaultPlatform = "text_sensor";
 
@@ -847,6 +849,7 @@
         isWritableEnum,
         isWritableNumeric,
         isWritableString,
+        isWritableDateTime,
         isWritable,
         isBooleanEnum,
         cleanLabel,
@@ -1316,7 +1319,7 @@
           if (nodeVal && nodeVal !== "ALL" && String(dp.nodeId || 1) !== nodeVal) return false;
         } else {
           if (modelFgSet && !dp.fgs.some(fg => modelFgSet.has(fg))) return false;
-          if (onlyCoded && !dp.code && !dp.isWritableString && cat !== "STRING_TIME") return false;
+          if (onlyCoded && !dp.code && !dp.isWritableString && !dp.isWritableDateTime && cat !== "STRING_TIME") return false;
         }
         if (!matchesLevelFilter(dp, levelVal)) return false;
         if (fgVal !== "ALL" && !dp.fgSet.has(fgVal)) return false;
@@ -1549,6 +1552,11 @@
           html += "<option value=\"text\" " + (platVal === "text" ? "selected" : "") + ">text (rw)</option>";
           html += "<option value=\"text_sensor\" " + (platVal === "text_sensor" ? "selected" : "") + ">text_sensor (ro)</option>";
           html += "</select>";
+        } else if (dp.isWritableDateTime) {
+          html += "<select onchange=\"updateRowField('" + dp.key + "', 'platform', this.value)\" " + (!isSel ? "disabled" : "") + ">";
+          html += "<option value=\"datetime\" " + (platVal === "datetime" ? "selected" : "") + ">datetime (rw)</option>";
+          html += "<option value=\"text_sensor\" " + (platVal === "text_sensor" ? "selected" : "") + ">text_sensor (ro)</option>";
+          html += "</select>";
         } else if (dp.type === "Enum") {
           html += "<select onchange=\"updateRowField('" + dp.key + "', 'platform', this.value)\" " + (!isSel ? "disabled" : "") + ">";
           if (dp.isBooleanEnum) {
@@ -1618,6 +1626,7 @@
       const binaryGroups = new Map();
       const textGroups = new Map();
       const writableTextGroups = new Map();
+      const datetimeGroups = new Map();
       const numberGroups = new Map();
       const selectGroups = new Map();
 
@@ -1626,6 +1635,7 @@
         if (item.platform === "binary_sensor") targetMap = binaryGroups;
         else if (item.platform === "text_sensor") targetMap = textGroups;
         else if (item.platform === "text") targetMap = writableTextGroups;
+        else if (item.platform === "datetime") targetMap = datetimeGroups;
         else if (item.platform === "number") targetMap = numberGroups;
         else if (item.platform === "select") targetMap = selectGroups;
         if (!targetMap.has(item.interval)) targetMap.set(item.interval, []);
@@ -1765,6 +1775,29 @@
           lines.push("  - platform: bdr_ble");
           lines.push("    update_interval: " + interval);
           lines.push("    texts:");
+          for (const entry of items) appendItemLines(entry.dp);
+          lines.push("");
+        }
+      }
+
+      if (datetimeGroups.size > 0) {
+        if (!fullConfig) {
+          lines.push("# Ensure 'time: - platform: homeassistant' is configured so ESPHome aligns the picker with your local timezone.");
+        } else {
+          lines.push("time:");
+          lines.push("  - platform: homeassistant");
+          lines.push("    id: ha_time");
+          lines.push("");
+        }
+        lines.push("datetime:");
+        const sortedIntervals = [...datetimeGroups.keys()].sort(
+          (a, b) => intervalOrder.indexOf(a) - intervalOrder.indexOf(b)
+        );
+        for (const interval of sortedIntervals) {
+          const items = datetimeGroups.get(interval);
+          lines.push("  - platform: bdr_ble");
+          lines.push("    update_interval: " + interval);
+          lines.push("    datetimes:");
           for (const entry of items) appendItemLines(entry.dp);
           lines.push("");
         }

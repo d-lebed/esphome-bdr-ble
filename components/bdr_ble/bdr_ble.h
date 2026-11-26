@@ -134,6 +134,11 @@ class BdrBleComponent : public Component, public ble_client::BLEClientNode {
                      uint32_t interval_ms, uint8_t node_id = 0xFF);
 #endif
 
+#ifdef USE_BDR_BLE_DATETIME
+  void register_datetime(BdrBleDateTime *dt, uint16_t index, uint8_t sub_index,
+                         uint32_t interval_ms, uint8_t node_id = 0xFF);
+#endif
+
   bool queue_write_datapoint(uint8_t node_id, uint16_t index, uint8_t sub_index,
                              const std::vector<uint8_t> &data);
 

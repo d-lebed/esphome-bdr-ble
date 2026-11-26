@@ -231,6 +231,34 @@ void test_time_of_day() {
   const uint8_t tod_2b[2] = {6, 45};
   assert(decode_time_of_day(tod_2b, 2, out));
   assert(out == "06:45");
+
+  // Structured parts + encode_time_of_day round-trips
+  BdrDateTime parts;
+  assert(decode_time_of_day_parts(tod_unset, 6, parts));
+  assert(parts.is_unset && !parts.has_date);
+
+  assert(decode_time_of_day_parts(tod_date_hms, 6, parts));
+  assert(!parts.is_unset && parts.has_date);
+  assert(parts.year == 2026 && parts.month == 11 && parts.day == 26);
+  assert(parts.hour == 14 && parts.minute == 15 && parts.second == 30);
+
+  std::vector<uint8_t> encoded;
+  assert(encode_time_of_day(2026, 11, 26, 14, 15, 30, encoded));
+  assert(encoded.size() == 6);
+  assert(std::memcmp(encoded.data(), tod_date_hms, 6) == 0);
+
+  // Leap year round-trip: 2024-02-29 23:59:59
+  assert(encode_time_of_day(2024, 2, 29, 23, 59, 59, encoded));
+  assert(decode_time_of_day(encoded.data(), encoded.size(), out));
+  assert(out == "2024-02-29 23:59:59");
+
+  // Non-leap Feb 29 rejected, pre-1984 rejected, >2163-06-05 rejected
+  assert(!encode_time_of_day(2025, 2, 29, 0, 0, 0, encoded));
+  assert(!encode_time_of_day(1983, 12, 31, 0, 0, 0, encoded));
+  assert(!encode_time_of_day(2163, 6, 6, 0, 0, 0, encoded));
+  assert(encode_time_of_day(2163, 6, 5, 0, 0, 0, encoded));
+  assert(decode_time_of_day(encoded.data(), encoded.size(), out));
+  assert(out == "2163-06-05 00:00");
 }
 
 void test_sdo_abort_classification() {

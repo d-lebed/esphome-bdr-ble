@@ -400,9 +400,26 @@ bool decode_visible_string(const uint8_t *data, size_t data_len,
   return true;
 }
 
-bool decode_time_of_day(const uint8_t *data, size_t data_len,
-                        std::string &out_str) {
-  out_str.clear();
+namespace {
+
+uint8_t gregorian_days_in_month(uint16_t year, uint8_t month) {
+  static constexpr uint8_t kDays[12] = {31, 28, 31, 30, 31, 30,
+                                        31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12) {
+    return 0;
+  }
+  if (month == 2) {
+    bool leap = (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
+    return leap ? 29 : 28;
+  }
+  return kDays[month - 1];
+}
+
+}  // namespace
+
+bool decode_time_of_day_parts(const uint8_t *data, size_t data_len,
+                              BdrDateTime &out_dt) {
+  out_dt = {};
   if (data == nullptr) {
     return false;
   }
@@ -429,23 +446,17 @@ bool decode_time_of_day(const uint8_t *data, size_t data_len,
     // All-zero CiA 301 TIME_OF_DAY (days == 0 && ms == 0) represents an unset
     // timestamp (e.g. unconfigured holiday or mode-change end time), not midnight.
     if (days_since_1984 == 0 && ms_since_midnight == 0) {
-      out_str = "Not set";
+      out_dt.is_unset = true;
       return true;
     }
 
     uint32_t total_sec = ms_since_midnight / 1000UL;
-    unsigned hours = static_cast<unsigned>(total_sec / 3600UL);
-    unsigned minutes = static_cast<unsigned>((total_sec % 3600UL) / 60UL);
-    unsigned seconds = static_cast<unsigned>(total_sec % 60UL);
+    out_dt.hour = static_cast<uint8_t>(total_sec / 3600UL);
+    out_dt.minute = static_cast<uint8_t>((total_sec % 3600UL) / 60UL);
+    out_dt.second = static_cast<uint8_t>(total_sec % 60UL);
 
-    char buf[32];
     if (days_since_1984 == 0) {
-      if (seconds == 0) {
-        snprintf(buf, sizeof(buf), "%02u:%02u", hours, minutes);
-      } else {
-        snprintf(buf, sizeof(buf), "%02u:%02u:%02u", hours, minutes, seconds);
-      }
-      out_str = buf;
+      out_dt.has_date = false;
       return true;
     }
 
@@ -461,29 +472,109 @@ bool decode_time_of_day(const uint8_t *data, size_t data_len,
     unsigned m = static_cast<unsigned>(mp < 10 ? mp + 3 : mp - 9);
     y += (m <= 2) ? 1 : 0;
 
-    if (seconds == 0) {
-      snprintf(buf, sizeof(buf), "%04d-%02u-%02u %02u:%02u",
-               static_cast<int>(y), m, d, hours, minutes);
-    } else {
-      snprintf(buf, sizeof(buf), "%04d-%02u-%02u %02u:%02u:%02u",
-               static_cast<int>(y), m, d, hours, minutes, seconds);
-    }
-    out_str = buf;
+    out_dt.year = static_cast<uint16_t>(y);
+    out_dt.month = static_cast<uint8_t>(m);
+    out_dt.day = static_cast<uint8_t>(d);
+    out_dt.has_date = true;
     return true;
   }
 
   // Legacy 2-byte [hour, minute] fallback
   if (data_len == 2) {
     if (data[0] < 24 && data[1] < 60) {
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%02u:%02u",
-               static_cast<unsigned>(data[0]),
-               static_cast<unsigned>(data[1]));
-      out_str = buf;
+      out_dt.hour = data[0];
+      out_dt.minute = data[1];
+      out_dt.second = 0;
+      out_dt.has_date = false;
       return true;
     }
   }
   return false;
+}
+
+bool decode_time_of_day(const uint8_t *data, size_t data_len,
+                        std::string &out_str) {
+  out_str.clear();
+  BdrDateTime dt;
+  if (!decode_time_of_day_parts(data, data_len, dt)) {
+    return false;
+  }
+  if (dt.is_unset) {
+    out_str = "Not set";
+    return true;
+  }
+
+  char buf[32];
+  if (!dt.has_date) {
+    if (dt.second == 0) {
+      snprintf(buf, sizeof(buf), "%02u:%02u",
+               static_cast<unsigned>(dt.hour),
+               static_cast<unsigned>(dt.minute));
+    } else {
+      snprintf(buf, sizeof(buf), "%02u:%02u:%02u",
+               static_cast<unsigned>(dt.hour),
+               static_cast<unsigned>(dt.minute),
+               static_cast<unsigned>(dt.second));
+    }
+  } else if (dt.second == 0) {
+    snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u",
+             static_cast<unsigned>(dt.year), static_cast<unsigned>(dt.month),
+             static_cast<unsigned>(dt.day), static_cast<unsigned>(dt.hour),
+             static_cast<unsigned>(dt.minute));
+  } else {
+    snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
+             static_cast<unsigned>(dt.year), static_cast<unsigned>(dt.month),
+             static_cast<unsigned>(dt.day), static_cast<unsigned>(dt.hour),
+             static_cast<unsigned>(dt.minute),
+             static_cast<unsigned>(dt.second));
+  }
+  out_str = buf;
+  return true;
+}
+
+bool encode_time_of_day(uint16_t year, uint8_t month, uint8_t day,
+                        uint8_t hour, uint8_t minute, uint8_t second,
+                        std::vector<uint8_t> &out_bytes) {
+  out_bytes.clear();
+  if (year < 1984 || year > 2163 || month < 1 || month > 12 ||
+      day < 1 || day > gregorian_days_in_month(year, month) ||
+      hour > 23 || minute > 59 || second > 59) {
+    return false;
+  }
+
+  // Days since 1970-01-01 (Howard Hinnant's civil-to-days algorithm),
+  // then offset from CiA 301 epoch 1984-01-01 (5113 days after 1970-01-01).
+  int32_t y = static_cast<int32_t>(year) - (month <= 2 ? 1 : 0);
+  int32_t era = (y >= 0 ? y : y - 399) / 400;
+  uint32_t yoe = static_cast<uint32_t>(y - era * 400);
+  uint32_t doy = (153U * (static_cast<uint32_t>(month) + (month > 2 ? -3 : 9)) +
+                  2U) /
+                     5U +
+                 static_cast<uint32_t>(day) - 1U;
+  uint32_t doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+  int32_t days_since_1970 =
+      era * 146097 + static_cast<int32_t>(doe) - 719468;
+  int32_t days_since_1984 = days_since_1970 - 5113;
+  // 0xFFFF is the invalid sentinel; max valid CiA 301 day count is 65534 (2163-06-05)
+  if (days_since_1984 < 0 || days_since_1984 > 65534) {
+    return false;
+  }
+
+  uint32_t ms_since_midnight =
+      (static_cast<uint32_t>(hour) * 3600UL +
+       static_cast<uint32_t>(minute) * 60UL +
+       static_cast<uint32_t>(second)) *
+      1000UL;
+  uint16_t days_u16 = static_cast<uint16_t>(days_since_1984);
+
+  out_bytes.resize(6);
+  out_bytes[0] = static_cast<uint8_t>(ms_since_midnight & 0xFFU);
+  out_bytes[1] = static_cast<uint8_t>((ms_since_midnight >> 8) & 0xFFU);
+  out_bytes[2] = static_cast<uint8_t>((ms_since_midnight >> 16) & 0xFFU);
+  out_bytes[3] = static_cast<uint8_t>((ms_since_midnight >> 24) & 0x0FU);
+  out_bytes[4] = static_cast<uint8_t>(days_u16 & 0xFFU);
+  out_bytes[5] = static_cast<uint8_t>((days_u16 >> 8) & 0xFFU);
+  return true;
 }
 
 SdoAbortCategory classify_sdo_abort(uint32_t abort_code) {

@@ -363,6 +363,17 @@ void BdrBleComponent::register_text(text::Text *txt, uint16_t index,
 }
 #endif
 
+#ifdef USE_BDR_BLE_DATETIME
+void BdrBleComponent::register_datetime(BdrBleDateTime *dt, uint16_t index,
+                                        uint8_t sub_index, uint32_t interval_ms,
+                                        uint8_t node_id) {
+  auto &dp = this->registry_.get_or_create_datapoint(
+      interval_ms, this->resolve_node_id_(node_id), index, sub_index,
+      BDR_TYPE_TIME_OF_DAY, 1.0f);
+  dp.datetimes.push_back(dt);
+}
+#endif
+
 bool BdrBleComponent::queue_write_datapoint(uint8_t node_id, uint16_t index,
                                             uint8_t sub_index,
                                             const std::vector<uint8_t> &data) {

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Writable Date & Time Picker Platform (`datetime` & `bdr_ble.clear_datetime` Action):**
+  - Added `components/bdr_ble/datetime/` platform (`esphome::datetime::DateTimeEntity`, single & grouped `datetimes:` syntax) for reading and editing writable 6-byte CANopen CiA 301 `TimeOfDay` parameters in Home Assistant via the native calendar + clock picker — including holiday schedules (`parZoneStartTimeHoliday`, `parZoneEndTimeHoliday`, `DP170`, `DP180`), temporary mode-change end timestamps (`0x3423:01` / `parZoneEndTimeModeChange`, `DP190`), and appliance clock (`AP050`).
+  - Added `encode_time_of_day()` and `decode_time_of_day_parts()` in `bdr_protocol.h/.cpp` with full Gregorian calendar validation (`1984-01-01` .. `2163-06-05`) and host C++20 round-trip unit tests.
+  - Added `bdr_ble.clear_datetime` automation action (`BdrBleDateTime::clear()`) to reset a timestamp back to all zeros (`00 00 00 00 00 00`, clearing Home Assistant state back to `Unknown` / `Not set`), plus a compile-time warning if `datetime:` is configured without a `time:` component for local timezone alignment.
+  - Updated `docs/configurator.html` to include writable `TimeOfDay` parameters in the **Writable** tab with `datetime (rw)` / `text_sensor (ro)` selection and automatic `datetime:` (and `time:`) YAML generation.
+
 ### Fixed
 - **Unset `TimeOfDay` Timestamp Formatting:**
   - `decode_time_of_day()` now reports all-zero 6-byte CiA 301 `TIME_OF_DAY` payloads (`days == 0` and `ms == 0`, used by BDR controllers for unconfigured holiday/override timestamps such as `parZoneStartTimeHoliday`, `parZoneEndTimeHoliday`, `DP170`, `DP180`, and `0x3423:01`) as `"Not set"` instead of `"00:00"`. Non-zero dates continue to render as `"YYYY-MM-DD HH:MM"` (or `"YYYY-MM-DD HH:MM:SS"`), and time-only payloads (`days == 0, ms > 0`) as `"HH:MM"` / `"HH:MM:SS"`.

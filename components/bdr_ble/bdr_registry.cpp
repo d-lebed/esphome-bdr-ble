@@ -6,6 +6,9 @@
 #ifdef USE_BDR_BLE_SELECT
 #include "select/bdr_ble_select.h"
 #endif
+#ifdef USE_BDR_BLE_DATETIME
+#include "datetime/bdr_ble_datetime.h"
+#endif
 
 #include <cmath>
 #include <cstdio>
@@ -581,6 +584,11 @@ void BdrDatapointRegistry::mark_datapoint_unsupported(uint8_t node_id,
     entity_name = entity_log_name(dp->texts[0], 0);
   }
 #endif
+#ifdef USE_BDR_BLE_DATETIME
+  if (!dp->datetimes.empty() && dp->datetimes[0] != nullptr) {
+    entity_name = entity_log_name(dp->datetimes[0], 0);
+  }
+#endif
   ESP_LOGW(TAG,
            "Datapoint 0x%04X:%02X (%s) reported unsupported by boiler "
            "(status=0x%02X, abort=0x%08X: %s); disabling polling",
@@ -735,6 +743,24 @@ void BdrDatapointRegistry::dispatch_datapoint_value(uint8_t node_id,
       ESP_LOGW(TAG,
                "Ignoring invalid VisibleString payload on 0x%04X:%02X (len=%zu, expected=%u)",
                index, sub_index, data_len, dp->max_len);
+    }
+  }
+#endif
+
+#ifdef USE_BDR_BLE_DATETIME
+  if (!dp->datetimes.empty() && dp->data_type == BDR_TYPE_TIME_OF_DAY) {
+    BdrDateTime dt_val;
+    if (decode_time_of_day_parts(data, data_len, dt_val)) {
+      dp->ever_succeeded = true;
+      for (auto *dt_ent : dp->datetimes) {
+        if (dt_ent != nullptr) {
+          dt_ent->apply_boiler_value(dt_val);
+        }
+      }
+    } else {
+      ESP_LOGW(TAG,
+               "Ignoring invalid TimeOfDay payload on 0x%04X:%02X (len=%zu)",
+               index, sub_index, data_len);
     }
   }
 #endif

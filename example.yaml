@@ -115,3 +115,23 @@ select:
         name: "Strateo DHW Operating Mode"
         # device_limits: false  # Optional: disable 0x502B option filtering & range guard
 
+time:
+  # Recommended when using 'datetime: platform: bdr_ble' so Home Assistant's picker matches the boiler's local clock
+  - platform: homeassistant
+    id: ha_time
+
+datetime:
+  # Writable 6-byte CiA 301 TimeOfDay parameters (native Home Assistant date & time picker)
+  - platform: bdr_ble
+    update_interval: 30s
+    datetimes:
+      - parameter: parZoneStartTimeHoliday
+        name: "Zone Holiday Start"
+      - parameter: parZoneEndTimeHoliday
+        name: "Zone Holiday End"
+      - parameter: DP170
+        name: "DHW Holiday Start"
+      - parameter: DP180
+        name: "DHW Holiday End"
+
+

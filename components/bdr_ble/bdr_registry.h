@@ -30,6 +30,9 @@ class BdrBleNumber;
 #ifdef USE_BDR_BLE_SELECT
 class BdrBleSelect;
 #endif
+#ifdef USE_BDR_BLE_DATETIME
+class BdrBleDateTime;
+#endif
 
 /// Flash-backed (.rodata) enum option entry emitted at compile time by obd.py / schema_helpers.py.
 struct EnumEntry {
@@ -76,6 +79,9 @@ struct DatapointRegistration {
 #endif
 #ifdef USE_TEXT
   std::vector<text::Text *> texts;
+#endif
+#ifdef USE_BDR_BLE_DATETIME
+  std::vector<BdrBleDateTime *> datetimes;
 #endif
 };
 

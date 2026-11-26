@@ -1029,7 +1029,34 @@ button:
         sub_index: 1
         name: "Activity 1 Name"</code></pre>
 
-        <h3 data-i18n="cfg_button_title">8. On-Demand Discovery (<code>button</code> &amp; <code>bdr_ble.discover</code> Action)</h3>
+        <h3>8. Writable Date &amp; Time Parameters (<code>datetime</code> &amp; <code>bdr_ble.clear_datetime</code> Action)</h3>
+        <p>
+          Exposes writable 6-byte CANopen CiA 301 <code>TimeOfDay</code> parameters (such as holiday start/end timestamps <code>parZoneStartTimeHoliday</code>, <code>parZoneEndTimeHoliday</code>, <code>DP170</code>, <code>DP180</code>, temporary mode-change end time <code>0x3423:01</code>, and appliance clock <code>AP050</code>) as native Home Assistant calendar date &amp; time pickers. Add <code>time: - platform: homeassistant</code> so ESPHome aligns the picker with your local timezone.
+        </p>
+        <pre><code>time:
+  - platform: homeassistant
+    id: ha_time
+
+datetime:
+  - platform: bdr_ble
+    update_interval: 30s
+    datetimes:
+      - parameter: parZoneStartTimeHoliday
+        id: zone_holiday_start
+        name: "Zone Holiday Start"
+      - parameter: parZoneEndTimeHoliday
+        id: zone_holiday_end
+        name: "Zone Holiday End"
+      - parameter: DP170
+        name: "DHW Holiday Start"
+      - parameter: DP180
+        name: "DHW Holiday End"
+
+# Optional: clear a holiday timestamp back to 00 00 00 00 00 00 (Not set):
+#   on_press:
+#     - bdr_ble.clear_datetime: zone_holiday_start</code></pre>
+
+        <h3 data-i18n="cfg_button_title">9. On-Demand Discovery (<code>button</code> &amp; <code>bdr_ble.discover</code> Action)</h3>
         <p data-i18n="cfg_button_desc">
           Triggers an on-demand CAN bus node scan (<code>0x1F85:00</code> + <code>0x2001:02</code>) and logs <code>BDR_SNAPSHOT:</code> / <code>BDR_SNAPSHOT[N&lt;id&gt;]:</code> for every detected node, instead of dumping snapshots on every BLE reconnect. Can be configured as a <code>button</code> entity or invoked from any ESPHome automation via <code>bdr_ble.discover</code>:
         </p>

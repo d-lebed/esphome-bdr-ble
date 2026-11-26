@@ -196,10 +196,33 @@ bool decode_visible_string(const uint8_t *data, size_t data_len,
 /// Returns 0 if `s` is empty or contains any control character (< 0x20 or 0x7F) or invalid UTF-8 sequence.
 size_t utf8_safe_truncate_len(const std::string &s, size_t max_bytes);
 
+/// Structured representation of a CANopen CiA 301 TIME_OF_DAY payload.
+struct BdrDateTime {
+  uint16_t year{0};
+  uint8_t month{0};
+  uint8_t day{0};
+  uint8_t hour{0};
+  uint8_t minute{0};
+  uint8_t second{0};
+  bool has_date{false};
+  bool is_unset{false};
+};
+
 /// Decode a CANopen CiA 301 TIME_OF_DAY (6 bytes: uint32_t ms_since_midnight + uint16_t days_since_1984)
-/// or 2-byte [hour, minute] payload into an ISO/time string.
+/// or 2-byte [hour, minute] payload into structured fields.
+bool decode_time_of_day_parts(const uint8_t *data, size_t data_len,
+                              BdrDateTime &out_dt);
+
+/// Decode a CANopen CiA 301 TIME_OF_DAY (6 bytes: uint32_t ms_since_midnight + uint16_t days_since_1984)
+/// or 2-byte [hour, minute] payload into an ISO/time string (or "Not set" when all 6 bytes are zero).
 bool decode_time_of_day(const uint8_t *data, size_t data_len,
                         std::string &out_str);
+
+/// Encode a calendar date and time (1984-01-01 through 2163-06-05) into a 6-byte
+/// Little-Endian CANopen CiA 301 TIME_OF_DAY payload.
+bool encode_time_of_day(uint16_t year, uint8_t month, uint8_t day,
+                        uint8_t hour, uint8_t minute, uint8_t second,
+                        std::vector<uint8_t> &out_bytes);
 
 /// Classify a 32-bit CANopen SDO abort code into permanent, auth/access, GetList-incompatible, or transient.
 SdoAbortCategory classify_sdo_abort(uint32_t abort_code);

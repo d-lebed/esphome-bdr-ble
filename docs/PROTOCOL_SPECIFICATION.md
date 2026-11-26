@@ -232,6 +232,7 @@ After desegmenting from `ab9af948-fb86-492d-820d-bdea2dcb7ecf` (handle `20`), ve
   - `U16`, `I16`: **2 bytes LE** (`raw & 0xFF`, `(raw >> 8) & 0xFF`)
   - `U32`, `I32`: **4 bytes LE**
   - `VisibleString`: fixed-length UTF-8 byte array null-padded (`0x00`) to `max_len` bytes (truncated safely on UTF-8 codepoint boundaries)
+  - `TimeOfDay`: **6 bytes LE** CiA 301 `TIME_OF_DAY` (`[uint32_t ms_since_midnight (bits 0..27), uint16_t days_since_1984]`, valid range `1984-01-01` .. `2163-06-05`, or all zeros `00 00 00 00 00 00` to clear/unset)
 - **Write Positive Ack (`Function = 0x05`, 10 bytes)**:
   `02 01 00 00 05 03 <NodeId> <Index_HI> <Index_LO> <SubIndex>`
 - **Write Negative Ack / SDO Abort (`Function = 0x06`, 14 bytes)**:

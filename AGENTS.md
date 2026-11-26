@@ -43,6 +43,9 @@ components/bdr_ble/
 ├── button/
 │   ├── __init__.py                     # On-demand CAN node & BDR_SNAPSHOT discovery button platform
 │   └── bdr_ble_button.h / .cpp         # BdrBleDiscoverButton entity class (Parented<BdrBleComponent>)
+├── datetime/
+│   ├── __init__.py                     # Writable CiA 301 TimeOfDay datetime platform & bdr_ble.clear_datetime action
+│   └── bdr_ble_datetime.h / .cpp       # BdrBleDateTime entity class (Parented<BdrBleComponent>)
 ├── number/
 │   ├── __init__.py                     # Writable numeric parameter platform (single & grouped syntax)
 │   └── bdr_ble_number.h / .cpp         # BdrBleNumber entity class (Parented<BdrBleComponent>)

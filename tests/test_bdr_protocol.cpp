@@ -192,6 +192,37 @@ void test_time_of_day() {
   assert(decode_time_of_day(tod_with_date, 6, out));
   assert(out == "1984-01-02 08:15");
 
+  // Unset all-zero 6-byte CiA 301 TIME_OF_DAY (days = 0, ms = 0) -> "Not set"
+  const uint8_t tod_unset[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  assert(decode_time_of_day(tod_unset, 6, out));
+  assert(out == "Not set");
+
+  // Modern date at midnight: 2026-11-26 00:00 (15670 days since 1984-01-01, ms = 0)
+  const uint16_t days_2026_11_26 = 15670;
+  const uint8_t tod_date_midnight[6] = {
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      static_cast<uint8_t>(days_2026_11_26 & 0xFF),
+      static_cast<uint8_t>((days_2026_11_26 >> 8) & 0xFF),
+  };
+  assert(decode_time_of_day(tod_date_midnight, 6, out));
+  assert(out == "2026-11-26 00:00");
+
+  // Modern date with time & seconds: 2026-11-26 14:15:30
+  const uint32_t ms_14_15_30 = (14UL * 3600UL + 15UL * 60UL + 30UL) * 1000UL;
+  const uint8_t tod_date_hms[6] = {
+      static_cast<uint8_t>(ms_14_15_30 & 0xFF),
+      static_cast<uint8_t>((ms_14_15_30 >> 8) & 0xFF),
+      static_cast<uint8_t>((ms_14_15_30 >> 16) & 0xFF),
+      static_cast<uint8_t>((ms_14_15_30 >> 24) & 0xFF),
+      static_cast<uint8_t>(days_2026_11_26 & 0xFF),
+      static_cast<uint8_t>((days_2026_11_26 >> 8) & 0xFF),
+  };
+  assert(decode_time_of_day(tod_date_hms, 6, out));
+  assert(out == "2026-11-26 14:15:30");
+
   // Sentinel 0xFFFFFFFF / 0xFFFF rejected
   const uint8_t tod_sentinel[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
   assert(!decode_time_of_day(tod_sentinel, 6, out));

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Unset `TimeOfDay` Timestamp Formatting:**
+  - `decode_time_of_day()` now reports all-zero 6-byte CiA 301 `TIME_OF_DAY` payloads (`days == 0` and `ms == 0`, used by BDR controllers for unconfigured holiday/override timestamps such as `parZoneStartTimeHoliday`, `parZoneEndTimeHoliday`, `DP170`, `DP180`, and `0x3423:01`) as `"Not set"` instead of `"00:00"`. Non-zero dates continue to render as `"YYYY-MM-DD HH:MM"` (or `"YYYY-MM-DD HH:MM:SS"`), and time-only payloads (`days == 0, ms > 0`) as `"HH:MM"` / `"HH:MM:SS"`.
+
 ---
 
 ## [1.6.0] - 2026-11-24

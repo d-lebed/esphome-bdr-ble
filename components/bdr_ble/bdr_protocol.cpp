@@ -425,6 +425,14 @@ bool decode_time_of_day(const uint8_t *data, size_t data_len,
     if (ms_since_midnight >= 86400000UL) {
       return false;
     }
+
+    // All-zero CiA 301 TIME_OF_DAY (days == 0 && ms == 0) represents an unset
+    // timestamp (e.g. unconfigured holiday or mode-change end time), not midnight.
+    if (days_since_1984 == 0 && ms_since_midnight == 0) {
+      out_str = "Not set";
+      return true;
+    }
+
     uint32_t total_sec = ms_since_midnight / 1000UL;
     unsigned hours = static_cast<unsigned>(total_sec / 3600UL);
     unsigned minutes = static_cast<unsigned>((total_sec % 3600UL) / 60UL);

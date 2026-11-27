@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.7.0] - 2026-11-27
+
 ### Added
 - **Writable Date & Time Picker Platform (`datetime` & `bdr_ble.clear_datetime` Action):**
   - Added `components/bdr_ble/datetime/` platform (`esphome::datetime::DateTimeEntity`, single & grouped `datetimes:` syntax) for reading and editing writable 6-byte CANopen CiA 301 `TimeOfDay` parameters in Home Assistant via the native calendar + clock picker — including holiday schedules (`parZoneStartTimeHoliday`, `parZoneEndTimeHoliday`, `DP170`, `DP180`), temporary mode-change end timestamps (`0x3423:01` / `parZoneEndTimeModeChange`, `DP190`), and appliance clock (`AP050`).
   - Added `encode_time_of_day()` and `decode_time_of_day_parts()` in `bdr_protocol.h/.cpp` with full Gregorian calendar validation (`1984-01-01` .. `2163-06-05`) and host C++20 round-trip unit tests.
   - Added `bdr_ble.clear_datetime` automation action (`BdrBleDateTime::clear()`) to reset a timestamp back to all zeros (`00 00 00 00 00 00`, clearing Home Assistant state back to `Unknown` / `Not set`), plus a compile-time warning if `datetime:` is configured without a `time:` component for local timezone alignment.
   - Updated `docs/configurator.html` to include writable `TimeOfDay` parameters in the **Writable** tab with `datetime (rw)` / `text_sensor (ro)` selection and automatic `datetime:` (and `time:`) YAML generation.
+- **BLE RSSI Troubleshooting FAQ:**
+  - Added a localized FAQ entry across `docs/index.html` and all 7 languages in `docs/i18n/index_i18n.js` explaining how to diagnose frequent BLE disconnects (`rsn 0x8` / `rsn 0x3e` / `status=0x85`) using ESPHome's `ble_client` `type: rssi` sensor and keep connected RSSI above `-80 dBm`.
 
 ### Fixed
 - **Unset `TimeOfDay` Timestamp Formatting:**
@@ -239,7 +245,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Protocol Specification (`docs/PROTOCOL_SPECIFICATION.md`):**
   - Complete documentation of the GATT table, TEA cipher variants, `DirectChannel` segmentation, `RUB v2.01` single and batch `GetList` framing, `0x502B` menu descriptor layout.
 
-[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/d-lebed/esphome-bdr-ble/compare/v1.4.0...v1.5.0

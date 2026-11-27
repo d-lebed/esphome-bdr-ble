@@ -29,7 +29,7 @@
         "name": "esphome-bdr-ble",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "ESPHome / ESP-IDF / Home Assistant",
-        "softwareVersion": "1.2.0",
+        "softwareVersion": "1.7.0",
         "license": "https://www.apache.org/licenses/LICENSE-2.0",
         "url": "https://d-lebed.github.io/esphome-bdr-ble/",
         "codeRepository": "https://github.com/d-lebed/esphome-bdr-ble",
@@ -65,6 +65,14 @@
             "acceptedAnswer": {
               "@type": "Answer",
               "text": "This component has ONLY been physically tested on a De Dietrich Strateo R32 (controller board EHC-08). Other BDR Thermea appliances (De Dietrich, Baxi, Remeha, Brötje, Chappée, Oertli) using EHC-*, CU-*, or SCB-* boards share the same protocol in the official Service Tool app and are listed as theoretical / untested compatibility only."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why does BLE keep disconnecting every 10–30 seconds (rsn 0x8 / status=0x85) or fail to write values?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Frequent supervision timeouts (rsn 0x8), connection establishment failures (rsn 0x3e), slow GATT discovery, or DirectChannel GATT write failed (status=0x85) usually indicate a weak Bluetooth signal (around -85 to -95 dBm). Add a ble_client type: rssi sensor in ESPHome to check live connected RSSI and aim for better than -80 dBm (ideally -50 to -75 dBm) by moving the ESP32 closer to the appliance's front control panel and away from metal casings or pipes, or by using an ESP32 with an external 2.4 GHz antenna."
             }
           }
         ]
@@ -537,7 +545,7 @@
   <nav class="navbar" aria-label="Main Navigation">
     <a class="navbar-brand" href="./">
       <span>esphome-bdr-ble</span>
-      <span class="badge">v1.6.0</span>
+      <span class="badge">v1.7.0</span>
     </a>
     <div class="nav-links">
       <a class="nav-item" href="#compatibility" data-i18n="nav_models">Supported Models</a>
@@ -769,7 +777,7 @@
         <h2 data-i18n="sec_qs_title">Quick Start YAML</h2>
         <p data-i18n="sec_qs_desc">Add the external component to your ESPHome YAML configuration:</p>
         <pre><code>external_components:
-  - source: github://d-lebed/esphome-bdr-ble@v1.6.0
+  - source: github://d-lebed/esphome-bdr-ble@v1.7.0
     components: [bdr_ble]
 
 esp32:
@@ -1091,6 +1099,23 @@ datetime:
           <h3 data-i18n="faq3_q">How do I find my boiler's Bluetooth MAC address?</h3>
           <p data-i18n="faq3_a">
             Enable <code>esp32_ble_tracker:</code> in ESPHome or check any Bluetooth scanner app while near the boiler. BDR Thermea appliances advertise with a name starting with the controller board code followed by the serial number (for example <code>EHC-08_...</code> or <code>CU-GH08_...</code>) and manufacturer data <code>"BDR"</code> (<code>0x42 0x44 0x52</code>), typically with a MAC prefix <code>00:A0:50:XX:XX:XX</code>.
+          </p>
+        </div>
+
+        <div class="faq-item">
+          <h3 data-i18n="faq4_q">Why does BLE keep disconnecting every 10–30 seconds (<code>rsn 0x8</code> / <code>status=0x85</code>) or fail to write values?</h3>
+          <p data-i18n="faq4_a">
+            Frequent supervision timeouts (<code>BT_HCI: hcif disc complete ... rsn 0x8</code>), connection establishment errors (<code>rsn 0x3e</code>), slow GATT discovery, or <code>DirectChannel GATT write failed: status=0x85</code> are almost always caused by a weak Bluetooth signal (for example <code>-85</code> to <code>-95 dBm</code> when the ESP32 is placed behind the boiler's metal casing or pipes). Check your live connected Bluetooth signal strength by adding a <code>ble_client</code> RSSI sensor to your YAML:
+          </p>
+          <pre><code>sensor:
+  - platform: ble_client
+    type: rssi
+    ble_client_id: boiler_ble
+    name: "Boiler BLE Signal"
+    update_interval: 10s
+    entity_category: diagnostic</code></pre>
+          <p data-i18n="faq4_a2">
+            Aim for <strong>better than <code>-80 dBm</code></strong> (ideally <code>-50</code> to <code>-75 dBm</code>). Moving the ESP32 closer to the appliance's front display panel (out from behind metal enclosures/pipes) or using an ESP32 with an external 2.4 GHz antenna usually eliminates disconnects completely.
           </p>
         </div>
       </section>
